@@ -15,7 +15,9 @@ pipeline {
         }
         stage('test') {
             steps {
+            dir("packages/gradient_boosting_model") {
                 sh 'tox'
+                }
                 //Get coverage
                 cobertura coberturaReportFile: 'coverage.xml'
                 //Get test results
