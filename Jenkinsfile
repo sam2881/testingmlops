@@ -18,10 +18,7 @@ pipeline {
             dir("packages/gradient_boosting_model") {
                 sh 'tox'
                 }
-                //Get coverage
-                cobertura coberturaReportFile: 'coverage.xml'
-                //Get test results
-                junit 'junit_reports/*.xml'
+
             }
         }
     }
