@@ -35,7 +35,7 @@ def test_health_endpoint(client):
         (
             "v1/predictions/regression",
             # we expect 8 rows to be filtered
-            1451,
+            1449,
         ),
     ),
 )
