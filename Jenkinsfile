@@ -27,15 +27,8 @@ pipeline {
             dir("packages/ml_api") {
                 sh 'tox'
                 }
-
             }
         }
-
-          stage('Load Test') {
-          steps{
-
-       }
-}
 
     }
 }
