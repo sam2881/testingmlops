@@ -30,5 +30,12 @@ pipeline {
 
             }
         }
+
+          stage('Load Test') {
+          steps{
+
+       }
+}
+
     }
 }
