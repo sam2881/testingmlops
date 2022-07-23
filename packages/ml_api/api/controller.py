@@ -1,8 +1,8 @@
+import json
+
 from flask import request, jsonify, Response
 from gradient_boosting_model.predict import make_prediction
 from regression_model.predict import make_prediction as make_regression_prediction
-
-import json
 
 
 def health():

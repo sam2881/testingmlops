@@ -30,5 +30,12 @@ pipeline {
             }
         }
 
+        stage("Deploy"){
+	step{
+	 snDevOpsChange() {
+	 eho">> Deploy in prod"
+	 }
+	 }
+}
     }
 }
