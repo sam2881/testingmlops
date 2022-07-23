@@ -30,12 +30,13 @@ pipeline {
             }
         }
 
-        stage('Docker Build') {
-      agent any
-      steps {
-        sh 'docker build -t mlops/reg:latest .'
-      }
-    }
+        stage('Build') {
+            steps {
+                script{
+                 app = docker.build("underwater")
+                }
+            }
+        }
         }
 
     }
