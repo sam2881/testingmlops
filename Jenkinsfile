@@ -31,11 +31,11 @@ pipeline {
         }
 
         stage("Deploy"){
-	steps{
-	 snDevOpsChange() {
+	        steps{
+	 snDevOpsChange()
 	 eho">> Deploy in prod"
 	 }
 	 }
-}
+
     }
 }
