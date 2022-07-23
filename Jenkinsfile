@@ -33,7 +33,7 @@ pipeline {
         stage("Deploy"){
 	        steps{
 	 snDevOpsChange()
-	 eho">> Deploy in prod"
+	 echo">> Deploy in prod"
 	 }
 	 }
 
