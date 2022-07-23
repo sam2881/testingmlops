@@ -30,15 +30,12 @@ pipeline {
             }
         }
 
-        stage('Building and pushing image to GCR') {
-            steps {
-                script {
-                    docker.withRegistry('https://gcr.io', 'gcr:AutomaticTrainingCICD') {
-                        app = docker.build('automatictrainingcicd/code-commit:latest')
-                        app.push("latest")
-                    }
-                }
-            }
+        stage('Docker Build') {
+      agent any
+      steps {
+        sh 'docker build -t mlops/reg:latest .'
+      }
+    }
         }
 
     }
