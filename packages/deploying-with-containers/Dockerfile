@@ -19,4 +19,4 @@ USER ml-api-user
 
 EXPOSE 8001
 
-CMD ["bash", "./run.sh"]
+CMD ["bash", "/packages/deploying-with-containers/house-prices-api/run.sh"]
