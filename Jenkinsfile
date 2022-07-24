@@ -30,6 +30,11 @@ pipeline {
             }
         }
 
+         stage('Initialize'){
+        def dockerHome = tool 'myDocker'
+        env.PATH = "${dockerHome}/bin:${env.PATH}"
+    }
+
         stage('Build') {
         steps {
             sh " docker build -t mlops -f /packages/deploying-with-containers/Dockerfile ."
