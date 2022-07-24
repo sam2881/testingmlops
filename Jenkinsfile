@@ -31,8 +31,9 @@ pipeline {
         }
 
         stage('Build') {
+        steps {
             sh " docker build -t mlops -f /packages/deploying-with-containers/Dockerfile ."
         }
         }
-
+}
     }
