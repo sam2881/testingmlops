@@ -30,7 +30,7 @@ pipeline {
             }
         }
 
-stages {
+
         stage('Cloning our Git') {
             steps {
                 git url: 'https://github.com/sam2881/testingmlops', branch: 'master'
@@ -51,7 +51,7 @@ stages {
                 step([$class: 'KubernetesEngineBuilder', projectId: env.PROJECT_ID, clusterName: env.CLUSTER_NAME, location: env.LOCATION, manifestPattern: 'pod.yaml', credentialsId: env.CREDENTIALS_ID, verifyDeployments: true])
             }
         }
-    }
+
 
 
 }
