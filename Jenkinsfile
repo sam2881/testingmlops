@@ -31,11 +31,7 @@ pipeline {
         }
 
         stage('Build') {
-            steps {
-                script{
-                 app = docker.build("underwater")
-                }
-            }
+            sh " docker build -t mlops -f /packages/deploying-with-containers/Dockerfile ."
         }
         }
 
