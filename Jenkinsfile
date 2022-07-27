@@ -13,7 +13,7 @@ pipeline {
                 sh 'pip install tox-pyenv'
             }
         }
-        stage('Unit test') {
+        stage('Unit Test') {
             steps {
             dir("packages/gradient_boosting_model") {
                 sh 'tox'
@@ -22,13 +22,27 @@ pipeline {
             }
         }
 
-         stage('API test') {
+         stage('API Test') {
             steps {
             dir("packages/ml_api") {
                 sh 'tox'
                 }
             }
         }
+
+         stage('Deploy to staging area') {
+            steps{
+              sh 'exit 0'
+
+                }
+            }
+
+             stage('Load Test') {
+            steps{
+              sh 'exit 0'
+
+                }
+            }
 
 
 
