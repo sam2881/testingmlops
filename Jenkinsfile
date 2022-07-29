@@ -13,10 +13,19 @@ pipeline {
                 sh 'pip install tox-pyenv'
             }
         }
+        stage('Pipe line Training') {
+            steps {
+            dir("packages/gradient_boosting_model") {
+                sh 'tox -e train '
+                }
+
+            }
+        }
+
         stage('Unit Test') {
             steps {
             dir("packages/gradient_boosting_model") {
-                sh 'tox'
+                sh 'tox -e train '
                 }
 
             }
