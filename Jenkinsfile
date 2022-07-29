@@ -13,6 +13,13 @@ pipeline {
                 sh 'pip install tox-pyenv'
             }
         }
+
+         stage('Pulling Model from GCP') {
+            steps{
+              sh 'exit 0'
+
+                }
+            }
         stage('Pipe line Training') {
             steps {
             dir("packages/gradient_boosting_model") {
