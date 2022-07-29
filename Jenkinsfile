@@ -22,6 +22,15 @@ pipeline {
             }
         }
 
+        stage('Copy model from GCP Bucket') {
+            steps {
+            dir("packages/final") {
+                sh 'python gcp_model_pull.py '
+                }
+
+            }
+        }
+
         stage('Unit Test') {
             steps {
             dir("packages/gradient_boosting_model") {
