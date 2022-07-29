@@ -26,6 +26,7 @@ pipeline {
             steps {
             dir("packages/final") {
             sh 'pip install google-cloud-storage'
+            sh 'pip install -r requirements.txt'
                 sh 'python gcp_model_pull.py '
                 }
 
