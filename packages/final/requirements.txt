@@ -7,3 +7,4 @@ flake8>=3.7.9,<4.0
 mypy>=0.740
 pydantic
 strictyaml
+requests

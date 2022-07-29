@@ -1,9 +1,10 @@
 from config.core import config, GCP_BUCKET_MODEL
 from google.cloud import storage
 
+
 import os
 
-mlflow_id = "7f75e29729e249b088d55bef81550402"
+mlflow_id = config.mlflowrunid
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'secrets/mlops-353417-0d6234ccd6b9.json'
 bucket_name = "mlops_artifacts_1"
 model_type = "artifacts"
