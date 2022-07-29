@@ -1,23 +1,16 @@
-import pickle
-import yaml
+
 from google.cloud import storage
 
 import os
-import typing as t
-# from final.config.core import config
-from pathlib import Path
+
 mlflow_id = "7f75e29729e249b088d55bef81550402"
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'secrets/mlops-353417-0d6234ccd6b9.json'
 bucket_name = "mlops_artifacts_1"
 model_type = "artifacts"
 model_filename = f"0/{mlflow_id}/artifacts/model/{mlflow_id}.pkl"
 
-from pathlib import Path
 
-# PACKAGE_ROOT = Path(packages.__file__).resolve().parent
-# TRAINED_MODEL_DIR = "packages/final/model/"
 name = f"{mlflow_id}.pkl"
-#
 dir = r'C:\Users\Samrat\Desktop\testingmlops\packages\final\model'
 
 
