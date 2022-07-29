@@ -1,4 +1,4 @@
-
+from config.core import config, GCP_BUCKET_MODEL
 from google.cloud import storage
 
 import os
@@ -11,7 +11,8 @@ model_filename = f"0/{mlflow_id}/artifacts/model/{mlflow_id}.pkl"
 
 
 name = f"{mlflow_id}.pkl"
-dir = r'C:\Users\Samrat\Desktop\testingmlops\packages\final\model'
+dir = GCP_BUCKET_MODEL
+# dir = r'C:\Users\Samrat\Desktop\testingmlops\packages\final\model'
 
 
 for f in os.listdir(dir):
