@@ -16,7 +16,7 @@ pipeline {
 
          stage('Pulling Model from GCP') {
             steps{
-              dir("packages/gradient_boosting_model") {
+              dir("packages/final") {
                 sh 'python gcp_model_pull.py  '
                 }
 
