@@ -17,6 +17,7 @@ pipeline {
          stage('Pulling Model from GCP') {
             steps{
               dir("packages/final") {
+                sh 'pip install google-cloud-storage'
                 sh 'python gcp_model_pull.py  '
                 }
 
