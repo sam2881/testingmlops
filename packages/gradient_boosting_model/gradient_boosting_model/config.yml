@@ -10,7 +10,7 @@ test_data_file: test.csv
 drop_features: YrSold
 
 pipeline_name: gb_regression
-pipeline_save_file: 07c4f9a74b7842de845203fe4c18dfa8_
+pipeline_save_file: regression_model_output_v
 
 # Variables
 # The variable we are attempting to predict (sale price)
