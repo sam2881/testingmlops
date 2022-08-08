@@ -36,7 +36,7 @@ pipeline {
         stage('Unit Test') {
             steps {
             dir("packages/gradient_boosting_model") {
-                sh 'tox -e train '
+                sh 'tox  '
                 }
 
             }
