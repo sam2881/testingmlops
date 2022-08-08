@@ -72,3 +72,7 @@ def load_model(bucket_name, model_type, model_filename):
 
 
 load_model(ld_bucket_name, ld_model_type, ld_model_filename)
+
+
+def cour():
+    pass
