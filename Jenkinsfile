@@ -23,7 +23,7 @@ pipeline {
 
             steps{
               dir("packages/final") {
-                SEC = "$(env.CREDENTIALS_ID)"
+                SEC = "$(echo $CREDENTIALS_ID)"
                 export sec
                 sh 'pip install google-cloud-storage'
                 sh 'python gcp_model_pull.py  '
