@@ -28,7 +28,7 @@ pipeline {
                 sh 'pip install google-cloud-storage'
                 sh 'python gcp_model_pull.py  '
                 }
-
+			}
                 }
             }
         stage('Pipe line Training') {
@@ -57,12 +57,6 @@ pipeline {
                 }
             }
         }
-
-
-
-
-
-
 
 }
     }
