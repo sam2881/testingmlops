@@ -5,7 +5,7 @@ import os
 from config.core import  GCP_BUCKET_MODEL
 
 # os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'secrets/mlflowdemo-763e984441b2.json'
-sec = os.environ['sec']
+# sec = os.environ['sec']
 runid = "046015f2d1e6468c93cb90d5c789cb90"
 run = "1"
 
