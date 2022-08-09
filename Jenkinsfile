@@ -20,7 +20,7 @@ pipeline {
          stage('Push model from mlflow repo to train repo ') {
 
             steps{
-            withCredentials([file(credentialsId: "newgcpkey", variable: "my_private_key"){
+
               dir("packages/final") {
 
                 sh "cp \$my-public-key /packages/final/secrets"
@@ -28,7 +28,7 @@ pipeline {
                 sh 'pip install google-cloud-storage'
                 sh 'python gcp_model_pull.py  '
                 }
-			}
+
                 }
             }
         stage('Pipe line Training') {
