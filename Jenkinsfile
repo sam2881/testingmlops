@@ -23,11 +23,7 @@ pipeline {
          stage('Push model from mlflow repo to train repo ') {
 
             steps{
-              dir("packages/final") {
-
-                sh 'pip install google-cloud-storage'
-                sh 'python gcp_model_pull.py  '
-                }
+              sh 'exit 0'
 
                 }
             }
