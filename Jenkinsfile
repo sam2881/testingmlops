@@ -8,7 +8,7 @@ pipeline {
     }
     environment {
         CREDENTIALS_ID  = 'newgcpkey'
-
+}
 
     stages {
         stage('setup') {
