@@ -6,7 +6,9 @@ pipeline {
             args '-u root:sudo'
         }
     }
-
+    environment {
+        CREDENTIALS_ID  = 'newgcpkey'
+}
 
     stages {
         stage('setup') {
@@ -20,10 +22,7 @@ pipeline {
          stage('Push model from mlflow repo to train repo ') {
 
             steps{
-
               dir("packages/final") {
-
-                sh "cp \$my-public-key /packages/final/secrets"
 
                 sh 'pip install google-cloud-storage'
                 sh 'python gcp_model_pull.py  '
@@ -57,6 +56,12 @@ pipeline {
                 }
             }
         }
+
+
+
+
+
+
 
 }
     }
