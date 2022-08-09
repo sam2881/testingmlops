@@ -7,7 +7,7 @@ pipeline {
         }
     }
     environment {
-        CREDENTIALS_ID  = 'newgcpkey'
+        CLOUDSDK_CORE_PROJECT  = 'mlflowdemo'
 }
 
     stages {
@@ -23,11 +23,11 @@ pipeline {
 
             steps{
               dir("packages/final") {
-                echo "${env.CREDENTIALS_ID}"
+               withCredentials([file(credentialsId: 'gcloud-creds', variable: 'my-private-key')]) {
                 sh 'pip install google-cloud-storage'
                 sh 'python gcp_model_pull.py  '
                 }
-
+}
                 }
             }
         stage('Pipe line Training') {
