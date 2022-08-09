@@ -1,10 +1,9 @@
 pipeline {
-    agent
-     environment {
-           CREDENTIALS_ID = 'newgcpkey'
+    environment {
+           CREDENTIALS_ID =
     }
-    {
-
+    agent
+     {
         dockerfile {
             filename 'Dockerfile'
             args '-u root:sudo'
