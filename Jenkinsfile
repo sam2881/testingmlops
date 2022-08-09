@@ -8,6 +8,7 @@ pipeline {
     }
     environment {
         CLOUDSDK_CORE_PROJECT  = 'mlflowdemo'
+        GCLOUD_CREDS=credentials('gcloud-creds')
 }
 
     stages {
@@ -23,11 +24,11 @@ pipeline {
 
             steps{
               dir("packages/final") {
-               withCredentials([file(credentialsId: 'gcloud-creds', variable: 'my-private-key')]) {
+
                 sh 'pip install google-cloud-storage'
                 sh 'python gcp_model_pull.py  '
                 }
-}
+
                 }
             }
         stage('Pipe line Training') {
