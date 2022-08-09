@@ -1,5 +1,9 @@
 pipeline {
-    agent {
+    agent
+     environment {
+           CREDENTIALS_ID = 'newgcpkey'
+    }
+    {
 
         dockerfile {
             filename 'Dockerfile'
