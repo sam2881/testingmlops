@@ -6,6 +6,10 @@ pipeline {
             args '-u root:sudo'
         }
     }
+    environment {
+        CREDENTIALS_ID  = 'newgcpkey'
+
+
     stages {
         stage('setup') {
             steps {
@@ -19,7 +23,7 @@ pipeline {
 
             steps{
               dir("packages/final") {
-                withCredentials([file(credentialsId: 'newgcpkey')])
+
                 sh 'pip install google-cloud-storage'
                 sh 'python gcp_model_pull.py  '
                 }
