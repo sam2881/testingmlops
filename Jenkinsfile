@@ -1,8 +1,5 @@
 pipeline {
-    environment {
-           CREDENTIALS_ID =
-    }
-    agent
+     agent
      {
         dockerfile {
             filename 'Dockerfile'
@@ -19,9 +16,10 @@ pipeline {
         }
 
          stage('Push model from mlflow repo to train repo ') {
+
             steps{
               dir("packages/final") {
-              sh 'export '
+                withCredentials([file(credentialsId: 'newgcpkey')])
                 sh 'pip install google-cloud-storage'
                 sh 'python gcp_model_pull.py  '
                 }
