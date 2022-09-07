@@ -10,7 +10,6 @@ pipeline {
         CLOUDSDK_CORE_PROJECT  = 'mlflowdemo'
         GCLOUD_CREDS=credentials('gcloud-creds')
 }
-
     stages {
         stage('setup') {
             steps {
@@ -19,12 +18,9 @@ pipeline {
                 sh 'pip install tox-pyenv'
             }
         }
-
          stage('Push model from mlflow repo to train repo ') {
-
             steps{
               sh 'exit 0'
-
                 }
             }
         stage('Pipe line Training') {
@@ -32,20 +28,15 @@ pipeline {
             dir("packages/gradient_boosting_model") {
                 sh 'tox -e train '
                 }
-
             }
         }
-
-
-        stage('Unit Test') {
+      stage('Unit Test') {
             steps {
             dir("packages/gradient_boosting_model") {
                 sh 'tox  '
                 }
-
             }
         }
-
          stage('API Test') {
             steps {
             dir("packages/ml_api") {
@@ -53,12 +44,5 @@ pipeline {
                 }
             }
         }
-
-
-
-
-
-
-
 }
     }
