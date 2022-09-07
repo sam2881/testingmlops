@@ -6,7 +6,11 @@ pipeline {
             args '-u root:sudo'
         }
     }
+<<<<<<< HEAD
 
+=======
+    
+>>>>>>> 70bf942212be5805e649883603e573a92ccae6d1
     stages {
         stage('setup') {
             steps {
