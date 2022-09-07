@@ -1,7 +1,7 @@
 import pytest
 
-from api.config import TestingConfig
-from api.app import create_app
+from gradient_boosting_model.api.config import TestingConfig
+from gradient_boosting_model.api.app import create_app
 
 
 @pytest.fixture(scope='session')
