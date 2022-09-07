@@ -36,6 +36,7 @@ pipeline {
          stage('API Test') {
             steps {
             dir("packages/ml_api") {
+                sh 'pip install -r test_requirements.txt'
                 sh 'tox'
                 }
             }
