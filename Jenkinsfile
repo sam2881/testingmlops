@@ -6,10 +6,7 @@ pipeline {
             args '-u root:sudo'
         }
     }
-    environment {
-        CLOUDSDK_CORE_PROJECT  = 'mlflowdemo'
-        GCLOUD_CREDS=credentials('gcloud-creds')
-}
+    
     stages {
         stage('setup') {
             steps {
