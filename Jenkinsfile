@@ -37,6 +37,7 @@ pipeline {
             steps {
             dir("packages/ml_api") {
                 sh 'pip install -r test_requirements.txt'
+                sh 'pip install connexion'
                 sh 'tox'
                 }
             }
