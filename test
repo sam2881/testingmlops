@@ -1,25 +1,6 @@
-def generate_select_expression(df):
-    """Generate a DataFrame select expression with properly aliased columns."""
-    column_names = df.columns
-    used_names = set()
-    select_expr = []
-
-    for col_name in column_names:
-        parts = col_name.split('.')
-        field_name = parts[-1]  # Last part of the name
-        alias_name = clean_column_name(field_name)
-        parent_name = clean_column_name(parts[-2]) if len(parts) > 1 else None
-        original_alias = alias_name
-        count = 1
-
-        # Check if alias is used and handle duplicates
-        while alias_name in used_names:
-            alias_name = f"{parent_name}_{original_alias}" if parent_name else original_alias
-            if count > 1:
-                alias_name += f"_{count}"
-            count += 1
-
-        used_names.add(alias_name)
-        select_expr.append(col(col_name).alias(alias_name))
-
-    return df.select(*select_expr)
+def clean_column_name(name):
+    """Convert camelCase to snake_case."""
+    import re
+    name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', name)
+    return name.lower()
