@@ -1,15 +1,17 @@
 def generate_select_expressions(schema, parent_prefix=""):
+    """Recursively generate select expressions from the schema, handling arrays and structs."""
     expressions = []
-    duplicates = set()
-    
-    def add_expression(field_path, alias):
-        if alias in duplicates:
-            # Append parent field to alias if it's a duplicate
-            parts = field_path.split('.')
-            if len(parts) > 1:
-                alias = camel_to_snake(parts[-2] + '_' + parts[-1])
-        expressions.append(col(field_path).alias(alias))
-        duplicates.add(alias)
+    path_tracker = {}  # Track paths to handle duplicates
+
+    def process_field(field, current_path):
+        # Generate the alias using snake_case conversion
+        alias = camel_to_snake(current_path.replace('.', '_'))
+        if alias in path_tracker:
+            # If duplicate, prepend the parent field name to make it unique
+            parent_field = current_path.split('.')[-2]
+            alias = camel_to_snake(parent_field + '_' + field.name)
+        path_tracker[alias] = current_path
+        return col(current_path).alias(alias)
 
     def parse_schema(schema, prefix=""):
         for field in schema.fields:
@@ -17,12 +19,11 @@ def generate_select_expressions(schema, parent_prefix=""):
             if isinstance(field.dataType, StructType):
                 parse_schema(field.dataType, current_path)
             elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-                # Exploding arrays to simplify, but this might need to be handled more subtly depending on use case
-                exploded_path = f"exploded_{current_path.replace('.', '_')}"
-                expressions.append(explode(col(current_path)).alias(exploded_path))
-                parse_schema(field.dataType.elementType, exploded_path)
+                # For arrays of structs, handle as a single column initially
+                # Note: You might choose to explode them during actual DataFrame transformations
+                expressions.append(process_field(field, current_path))
             else:
-                add_expression(current_path, camel_to_snake(field.name))
+                expressions.append(process_field(field, current_path))
 
     parse_schema(schema)
     return expressions
