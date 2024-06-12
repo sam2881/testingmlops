@@ -1,23 +1,24 @@
-def extract_column_names(schema, parent_prefix="", used_names=set()):
-    """Extract column names based on the DataFrame schema, only using the last part of the name, handling duplicates."""
-    column_names = []
-    for field in schema.fields:
-        snake_case_name = camel_to_snake(field.name)
-        full_name = f"{parent_prefix}.{field.name}" if parent_prefix else field.name
-        if snake_case_name in used_names:
-            snake_case_name = f"{camel_to_snake(parent_prefix.split('.')[-1])}_{snake_case_name}"
-        used_names.add(snake_case_name)
+def generate_select_expression(df):
+    """Generate a DataFrame select expression with properly aliased columns."""
+    column_names = df.schema.names  # Use schema.names to ensure we get the full path of nested columns
+    seen_aliases = {}
+    select_expr = []
 
-        if isinstance(field.dataType, StructType):
-            nested_columns = extract_column_names(field.dataType, full_name, used_names)
-            column_names.extend(nested_columns)
-        elif isinstance(field.dataType, ArrayType):
-            element_type = field.dataType.elementType
-            if isinstance(element_type, StructType):
-                nested_columns = extract_column_names(element_type, f"{full_name}.element", used_names)
-                column_names.extend(nested_columns)
-            else:
-                column_names.append((full_name, snake_case_name))
-        else:
-            column_names.append((full_name, snake_case_name))
-    return column_names
+    for col_name in column_names:
+        parts = col_name.split('.')
+        simple_name = parts[-1]  # Last part of the name
+        snake_case_name = camel_to_snake(simple_name)
+
+        # Handle duplicates by appending the parent's name in snake_case
+        original_snake_case_name = snake_case_name
+        count = 1
+        while snake_case_name in seen_aliases:
+            parent_name = parts[-2] if len(parts) > 1 else 'base'
+            snake_case_name = camel_to_snake(parent_name) + '_' + original_snake_case_name
+            # Increment suffix to handle more than one level of duplication
+            count += 1
+
+        seen_aliases[snake_case_name] = True
+        select_expr.append(col("`" + col_name + "`").alias(snake_case_name))
+
+    return df.select(*select_expr)
