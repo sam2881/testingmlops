@@ -1,7 +1,10 @@
 def generate_multiline_select_chain(column_names):
     """Generate a multiline sequence of select statements."""
-    select_chain = generate_select_chain(column_names)
-    select_statements = select_chain.split('.select(')
-    multiline_select_chain = '\n'.join(['.select(' + statement.strip() for statement in select_statements if statement.strip()])
-    multiline_select_chain = multiline_select_chain.replace(')\n', ') \\\n')
-    return multiline_select_chain
+    select_statements = [f"    col('{col}')," for col in column_names]
+    multiline_select_chain = "\n".join(select_statements)
+    return f"df.select(\n{multiline_select_chain}\n)"
+
+# Example usage
+column_names = ['column1', 'column2', 'column3']
+multiline_select_chain = generate_multiline_select_chain(column_names)
+print(multiline_select_chain)
