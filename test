@@ -2,8 +2,6 @@ def generate_multiline_select_chain(column_names):
     """Generate a multiline sequence of select statements."""
     select_chain = generate_select_chain(column_names)
     select_statements = select_chain.split('.select(')
-    multiline_select_chain = '\n'.join(['.select(' + statement for statement in select_statements])
-    multiline_select_chain = multiline_select_chain.replace('.select(', '.select(')
-    multiline_select_chain = multiline_select_chain.replace('\n.', '.')
+    multiline_select_chain = '\n'.join(['.select(' + statement.strip() for statement in select_statements if statement.strip()])
     multiline_select_chain = multiline_select_chain.replace(')\n', ') \\\n')
     return multiline_select_chain
