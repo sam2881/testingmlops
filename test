@@ -1,14 +1,6 @@
-def generate_select_chain(column_names):
-    """Generate a chain of select statements."""
-    select_chain = "df"
-    for column in column_names:
-        select_chain += f".select('{column}')"
-    return select_chain
-
-# Example list of column names
-column_names = ['column1', 'column2', 'column3']
-
-# Generate the select chain
-select_chain = generate_select_chain(column_names)
-
-print(select_chain)
+def generate_multiline_select_chain(column_names):
+    """Generate a multiline sequence of select statements."""
+    select_chain = generate_select_chain(column_names)
+    select_statements = select_chain.split('.select(')
+    multiline_select_chain = '\n'.join(['.select(' + statement for statement in select_statements])
+    return multiline_select_chain
