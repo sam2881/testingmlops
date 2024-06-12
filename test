@@ -1,18 +1,21 @@
-def extract_column_names(schema, parent_prefix=""):
-    """Extract column names based on the DataFrame schema."""
-    column_names = []
-    for field in schema.fields:
-        full_field_name = f"{parent_prefix}{field.name}" if parent_prefix else field.name
-        if isinstance(field.dataType, StructType):
-            nested_columns = extract_column_names(field.dataType, full_field_name + ".")
-            column_names.extend(nested_columns)
-        elif isinstance(field.dataType, ArrayType):
-            element_type = field.dataType.elementType
-            if isinstance(element_type, StructType):
-                nested_columns = extract_column_names(element_type, full_field_name + ".")
-                column_names.extend(nested_columns)
-            else:
-                column_names.append(full_field_name)
+def flatten_df(df, prefix=""):
+    """
+    Recursively flatten a DataFrame with complex nested structures (structs and arrays).
+    """
+    flat_cols = []
+    complex_cols = []
+
+    for field in df.schema.fields:
+        name = field.name
+        dtype = field.dataType
+        flat_name = f"{prefix}.{name}" if prefix else name
+
+        if isinstance(dtype, StructType):
+            complex_cols += flatten_df(df.select(f"{flat_name}.*"), flat_name)
+        elif isinstance(dtype, ArrayType) and isinstance(dtype.elementType, StructType):
+            exploded_df = df.withColumn(name, explode_outer(col(name)))
+            complex_cols += flatten_df(exploded_df, flat_name)
         else:
-            column_names.append(full_field_name)
-    return column_names
+            flat_cols.append(col(flat_name).alias(flat_name.replace(".", "_")))
+
+    return flat_cols + complex_cols
