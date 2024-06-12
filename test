@@ -10,7 +10,7 @@ def generate_select_expressions(schema, parent_prefix=""):
             if isinstance(field.dataType.elementType, StructType):
                 nested_expressions = generate_select_expressions(field.dataType.elementType, full_field_name + ".")
                 for expr in nested_expressions:
-                    expressions.append(expr.alias(camel_to_snake(full_field_name + "_" + expr._jc.toString().split(" AS ")[1])))
+                    expressions.append(expr.alias(camel_to_snake(full_field_name) + "_" + expr._jc.toString().split(" AS ")[1]))
             else:
                 snake_case_alias = camel_to_snake(full_field_name)
                 expressions.append(col(full_field_name).alias(snake_case_alias))
