@@ -1,7 +1,7 @@
 def generate_select_expressions(schema, parent_prefix=""):
     """
     Generate select expressions based on the DataFrame schema with snake_case aliases.
-    This function recursively handles nested StructType and ArrayType.
+    Handles nested structures and arrays by using appropriate flattening or exploding when necessary.
     """
     expressions = []
     for field in schema.fields:
@@ -11,12 +11,11 @@ def generate_select_expressions(schema, parent_prefix=""):
             nested_expressions = generate_select_expressions(field.dataType, full_field_name + ".")
             expressions.extend(nested_expressions)
         elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            # Handle array of StructTypes
-            nested_expressions = generate_select_expressions(field.dataType.elementType, full_field_name + "[].")
-            for expr in nested_expressions:
-                # Adding array element indication in alias to avoid clashes
-                alias = camel_to_snake(expr._jc.toString().split(" AS ")[1])
-                expressions.append(col(expr._jc.toString().split(" AS ")[0]).alias(alias))
+            # Use explode for arrays to handle struct elements individually
+            exploded_field = f"exploded_{camel_to_snake(field.name)}"
+            expressions.append(explode(col(full_field_name)).alias(exploded_field))
+            nested_expressions = generate_select_expressions(field.dataType.elementType, exploded_field + ".")
+            expressions.extend(nested_expressions)
         else:
             # Generate snake_case alias for simple types
             snake_case_alias = camel_to_snake(full_field_name.replace('.', '_'))
