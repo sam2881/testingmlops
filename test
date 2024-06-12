@@ -1,24 +1,29 @@
+def clean_column_name(name):
+    """Convert camelCase to snake_case and clean up the name."""
+    name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', name)
+    return name.lower()
+
 def generate_select_expression(df):
-    """Generate a DataFrame select expression with properly aliased columns."""
-    column_names = df.columns
+    """Generate a DataFrame select expression with properly aliased columns, avoiding duplicates."""
     used_names = set()
     select_expr = []
 
-    for col_name in column_names:
+    for col_name in df.columns:
         parts = col_name.split('.')
         simple_name = parts[-1]  # Last part of the name
         snake_case_name = clean_column_name(simple_name)
         
-        # Handle duplicates by appending the parent's name in snake_case
         original_name = snake_case_name
-        counter = 0
+        parent_name = clean_column_name(parts[-2]) if len(parts) > 1 else None
+        counter = 1
+        
         while snake_case_name in used_names:
-            parent_name = clean_column_name(parts[-2]) if len(parts) > 1 else "base"
-            counter += 1
-            snake_case_name = f"{parent_name}_{original_name}"
+            if parent_name:
+                snake_case_name = f"{parent_name}_{original_name}"
             if counter > 1:
-                snake_case_name = f"{parent_name}_{original_name}_{counter}"
-
+                snake_case_name = f"{snake_case_name}_{counter}"
+            counter += 1
+        
         used_names.add(snake_case_name)
         select_expr.append(col(col_name).alias(snake_case_name))
 
