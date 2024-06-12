@@ -1,23 +1,12 @@
-def generate_select_expression(df):
-    """Generate a DataFrame select expression with properly aliased columns, handling duplicates."""
-    seen_aliases = set()
-    select_expr = []
+def print_select_statement(df):
+    """Print a DataFrame select statement with aliases for each column."""
+    # Assuming generate_select_expression returns a DataFrame with the desired alias
+    aliased_df = generate_select_expression(df)
+    select_statement = "df.select(\n"
+    for column in aliased_df.columns:
+        select_statement += f"    col('{column}').alias('{column}'),\n"
+    select_statement = select_statement.rstrip(',\n') + '\n)'
+    print(select_statement)
 
-    for col_name in df.columns:
-        parts = col_name.split('.')
-        last_part = parts[-1]  # Last part of the dot-separated name
-        last_part_split = last_part.split('_')
-        simple_name = last_part_split[-1]  # Last part of the name after split by '_'
-        snake_case_name = camel_to_snake(simple_name)
-        
-        # Handle duplicates by checking if seen and if so, append parent's name
-        original_snake_case_name = snake_case_name
-        if snake_case_name in seen_aliases:
-            # Include parent name to handle duplicates
-            parent_name = parts[-2] if len(parts) > 1 else 'base'
-            snake_case_name = camel_to_snake(parent_name) + '_' + original_snake_case_name
-        
-        seen_aliases.add(snake_case_name)
-        select_expr.append(col(col_name).alias(snake_case_name))
-
-    return df.select(*select_expr)
+# Use the function on your DataFrame
+print_select_statement(df)
