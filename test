@@ -1,9 +1,3 @@
-def camel_to_snake(name):
-    """Convert camelCase string to snake_case string."""
-    import re
-    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
-    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
-
 def generate_select_expression(df):
     """Generate a DataFrame select expression with properly aliased columns."""
     column_names = df.schema.names
@@ -14,12 +8,17 @@ def generate_select_expression(df):
         parts = col_name.split('.')
         simple_name = parts[-1]  # Last part of the name
         snake_case_name = camel_to_snake(simple_name)
-        
-        # Handle duplicates by appending the parent's name in snake_case
-        if snake_case_name in seen_aliases:
+
+        # Check for duplicates and adjust as necessary
+        original_snake_case_name = snake_case_name
+        count = 1
+        while snake_case_name in seen_aliases:
             parent_name = parts[-2] if len(parts) > 1 else 'base'
-            snake_case_name = camel_to_snake(parent_name) + '_' + snake_case_name
-        
+            snake_case_name = camel_to_snake(parent_name) + '_' + original_snake_case_name
+            if count > 1:  # Increment suffix if repeated duplicates
+                snake_case_name += f"_{count}"
+            count += 1
+
         seen_aliases[snake_case_name] = True
         select_expr.append(col(col_name).alias(snake_case_name))
 
