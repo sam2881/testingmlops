@@ -1,36 +1,34 @@
-def generate_select_expressions(schema, parent_prefix=""):
-    """Generate select expressions based on the DataFrame schema with snake_case aliases."""
+def generate_select_expressions(schema, parent_prefix="", parent_aliases=None):
+    """Generate select expressions for PySpark DataFrame based on the schema with snake_case aliases."""
+    if parent_aliases is None:
+        parent_aliases = {}
+    
     expressions = []
-    seen_aliases = set()
-
-    def handle_field(field, full_field_name):
-        snake_case_alias = camel_to_snake(full_field_name.replace('.', '_'))
-
-        # Avoid duplicate aliases by appending parent names if needed
-        original_alias = snake_case_alias
-        count = 1
-        while snake_case_alias in seen_aliases:
-            parts = full_field_name.split('.')
-            if len(parts) > count:
-                snake_case_alias = camel_to_snake('_'.join(parts[-(count+1):]))
-            count += 1
-        seen_aliases.add(snake_case_alias)
-
-        return col(full_field_name).alias(snake_case_alias)
-
     for field in schema.fields:
+        field_name = field.name
         full_field_name = f"{parent_prefix}{field.name}" if parent_prefix else field.name
+        snake_case_alias = camel_to_snake(full_field_name)
+
+        # Ensure unique aliases by checking against previously used aliases
+        original_snake_case_alias = snake_case_alias
+        count = 1
+        while snake_case_alias in parent_aliases:
+            snake_case_alias = f"{original_snake_case_alias}_{count}"
+            count += 1
+        parent_aliases[snake_case_alias] = True
+        
         if isinstance(field.dataType, StructType):
             # Recursive call for nested StructType
-            nested_expressions = generate_select_expressions(field.dataType, full_field_name + ".")
+            nested_expressions = generate_select_expressions(field.dataType, full_field_name + ".", parent_aliases)
             expressions.extend(nested_expressions)
         elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            # Handle array of StructTypes by exploding and then applying the same logic to the elements
-            exploded_field = f"exploded_{camel_to_snake(field.name)}"
-            expressions.append(explode(col(full_field_name)).alias(exploded_field))
-            nested_expressions = generate_select_expressions(field.dataType.elementType, exploded_field + ".")
+            # Explode arrays and then handle nested structures
+            exploded_field_name = f"exploded_{snake_case_alias}"
+            expressions.append(explode(col(full_field_name)).alias(exploded_field_name))
+            nested_expressions = generate_select_expressions(field.dataType.elementType, exploded_field_name + ".", parent_aliases)
             expressions.extend(nested_expressions)
         else:
-            expressions.append(handle_field(field, full_field_name))
+            # Simple types
+            expressions.append(col(full_field_name).alias(snake_case_alias))
 
     return expressions
