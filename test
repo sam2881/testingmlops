@@ -1,29 +1,20 @@
-def flatten_df(df, path=None):
+def flatten_schema(schema, prefix=''):
     """
-    Recursively flatten a DataFrame with complex nested structures (structs and arrays).
-    Add parent names to column names if there are naming conflicts.
+    This function creates a flat list of columns with their full paths from a nested schema.
     """
-    flat_cols = []  # List to collect columns (already flattened)
-    complex_cols = []  # List to collect complex columns (structs or arrays)
-
-    # Iterate over each field in the DataFrame schema
-    for field in df.schema.fields:
-        # Build the path (prefix) for the current field
-        col_name = f"{path}.{field.name}" if path else field.name
-
-        # Check field type and handle accordingly
+    fields = []
+    for field in schema.fields:
         if isinstance(field.dataType, StructType):
-            # Recurse into StructType
-            nested_cols = flatten_df(df.select(f"{col_name}.*"), col_name)
-            complex_cols.extend(nested_cols)
+            fields += flatten_schema(field.dataType, prefix + field.name + '.')
         elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            # If ArrayType contains StructType, explode and recurse
-            df = df.withColumn(col_name, explode_outer(col(col_name)))
-            nested_cols = flatten_df(df.select(f"{col_name}.*"), col_name)
-            complex_cols.extend(nested_cols)
+            fields += flatten_schema(field.dataType.elementType, prefix + field.name + '.')
         else:
-            # For other types, use directly
-            # Using alias to ensure unique column names
-            flat_cols.append(col(col_name).alias(col_name.replace(".", "_")))
+            fields.append(prefix + field.name)
+    return fields
 
-    return flat_cols + complex_cols
+# Use the function to get a flat list of column names
+flat_columns = flatten_schema(df.schema)
+
+# Now you can select columns directly using the flat column names list
+# Make sure to replace dots with underscores or other separators if you directly want to access them
+df = df.select([col(name).alias(name.replace('.', '_')) for name in flat_columns])
