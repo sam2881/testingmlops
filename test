@@ -1,20 +1,30 @@
-def flatten_schema(schema, prefix=''):
-    """
-    This function creates a flat list of columns with their full paths from a nested schema.
-    """
-    fields = []
-    for field in schema.fields:
-        if isinstance(field.dataType, StructType):
-            fields += flatten_schema(field.dataType, prefix + field.name + '.')
-        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            fields += flatten_schema(field.dataType.elementType, prefix + field.name + '.')
+def generate_select_statement(df):
+    def snake_case(s):
+        return ''.join(['_'+c.lower() if c.isupper() else c for c in s]).lstrip('_')
+
+    def recursive_build_alias(path, alias_map):
+        parts = path.split('.')
+        if len(parts) > 1:
+            # Recursively handle nesting
+            new_alias = snake_case(parts[-1])
+            if new_alias in alias_map:
+                # If there's a conflict, prepend the parent's name
+                new_alias = snake_case(parts[-2]) + '_' + new_alias
+            alias_map[parts[-1]] = new_alias  # Map the original to the new alias
         else:
-            fields.append(prefix + field.name)
-    return fields
+            # Base case: simple column
+            alias_map[path] = snake_case(path)
 
-# Use the function to get a flat list of column names
-flat_columns = flatten_schema(df.schema)
+    # Create an alias map
+    alias_map = {}
+    for field in df.schema.fields:
+        recursive_build_alias(field.name, alias_map)
 
-# Now you can select columns directly using the flat column names list
-# Make sure to replace dots with underscores or other separators if you directly want to access them
-df = df.select([col(name).alias(name.replace('.', '_')) for name in flat_columns])
+    # Construct the select statement
+    select_expr = [col(name).alias(alias_map[name]) for name in alias_map]
+    return df.select(*select_expr)
+
+# Usage example:
+# Assuming `df` is your DataFrame loaded with the full schema
+new_df = generate_select_statement(df)
+new_df.show()
