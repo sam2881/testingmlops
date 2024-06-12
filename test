@@ -1,15 +1,21 @@
-def generate_select_columns(schema, parent_prefix="", parent_alias=""):
-    """Generate a list of column names based on the DataFrame schema."""
-    columns = []
+def extract_column_names(schema, parent_prefix="", parent_alias=""):
+    """Extract column names based on the DataFrame schema."""
+    column_names = []
     for field in schema.fields:
         full_field_name = f"{parent_prefix}{field.name}" if parent_prefix else field.name
-        alias_name = field.name if not parent_alias else f"{parent_alias}_{field.name}"
-
+        if parent_alias:
+            full_field_name = f"{parent_alias}.{field.name}"
+        
         if isinstance(field.dataType, StructType):
-            nested_columns = generate_select_columns(field.dataType, full_field_name + ".", alias_name)
-            columns.extend(nested_columns)
+            nested_columns = extract_column_names(field.dataType, full_field_name)
+            column_names.extend(nested_columns)
         elif isinstance(field.dataType, ArrayType):
-            columns.append(full_field_name)
+            element_type = field.dataType.elementType
+            if isinstance(element_type, StructType):
+                nested_columns = extract_column_names(element_type, full_field_name)
+                column_names.extend(nested_columns)
+            else:
+                column_names.append(full_field_name)
         else:
-            columns.append(full_field_name)
-    return columns
+            column_names.append(full_field_name)
+    return column_names
