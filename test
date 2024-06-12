@@ -1,9 +1,9 @@
-def generate_select_expression(df):
-    """Generate a DataFrame select expression with properly aliased columns, using column names."""
+def generate_select_expression_from_list(column_names):
+    """Generate a DataFrame select expression with properly aliased columns from a list of column names."""
     seen_aliases = {}
     select_expr = []
 
-    for col_name in df.columns:
+    for col_name in column_names:
         parts = col_name.split('.')
         simple_name = parts[-1]  # Get the last part of the name
         snake_case_name = camel_to_snake(simple_name)  # Convert it to snake_case
@@ -21,6 +21,7 @@ def generate_select_expression(df):
         else:
             seen_aliases[snake_case_name] = 0
 
-        select_expr.append(col(".".join(parts)).alias(snake_case_name))
+        select_expr.append(f"col('{col_name}').alias('{snake_case_name}')")
 
-    return df.select(*select_expr)
+    # Join all the select expressions to simulate a DataFrame select method
+    return ",\n".join(select_expr)
