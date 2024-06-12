@@ -1,24 +1,25 @@
 def generate_select_expression(df):
     """Generate a DataFrame select expression with properly aliased columns."""
-    column_names = df.schema.names  # Use schema.names to ensure we get the full path of nested columns
-    seen_aliases = {}
+    column_names = df.columns
+    used_names = set()
     select_expr = []
 
     for col_name in column_names:
         parts = col_name.split('.')
-        simple_name = parts[-1]  # Last part of the name
-        snake_case_name = camel_to_snake(simple_name)
-
-        # Handle duplicates by appending the parent's name in snake_case
-        original_snake_case_name = snake_case_name
+        field_name = parts[-1]  # Last part of the name
+        alias_name = clean_column_name(field_name)
+        parent_name = clean_column_name(parts[-2]) if len(parts) > 1 else None
+        original_alias = alias_name
         count = 1
-        while snake_case_name in seen_aliases:
-            parent_name = parts[-2] if len(parts) > 1 else 'base'
-            snake_case_name = camel_to_snake(parent_name) + '_' + original_snake_case_name
-            # Increment suffix to handle more than one level of duplication
+
+        # Check if alias is used and handle duplicates
+        while alias_name in used_names:
+            alias_name = f"{parent_name}_{original_alias}" if parent_name else original_alias
+            if count > 1:
+                alias_name += f"_{count}"
             count += 1
 
-        seen_aliases[snake_case_name] = True
-        select_expr.append(col("`" + col_name + "`").alias(snake_case_name))
+        used_names.add(alias_name)
+        select_expr.append(col(col_name).alias(alias_name))
 
     return df.select(*select_expr)
