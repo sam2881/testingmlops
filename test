@@ -1,0 +1,15 @@
+def generate_select_expressions(df):
+    """Generate select expressions based on the DataFrame schema with snake_case aliases."""
+    expressions = []
+    for field in df.schema.fields:
+        if isinstance(field.dataType, StructType):
+            # Recursive call for nested StructType
+            nested_expressions = generate_select_expressions(df.select(field.name + ".*"))
+            expressions.extend(nested_expressions)
+        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
+            # Handle array of StructTypes
+            pass  # Handling arrays of Structs might need custom logic
+        else:
+            snake_case_alias = camel_to_snake(field.name)
+            expressions.append(col(field.name).alias(snake_case_alias))
+    return expressions
