@@ -1,30 +1,14 @@
-def generate_select_statement(df):
-    def snake_case(s):
-        return ''.join(['_'+c.lower() if c.isupper() else c for c in s]).lstrip('_')
+def generate_select_expression(df):
+    """Generate a DataFrame select expression with properly aliased columns."""
+    column_names = df.columns
+    aliases = {}
+    for col_name in column_names:
+        base_name = col_name.split('.')[-1]
+        snake_case_name = camel_to_snake(base_name)
+        if snake_case_name in aliases:
+            parent = col_name.split('.')[-2]
+            snake_case_name = camel_to_snake(parent) + '_' + snake_case_name
+        aliases[col_name] = snake_case_name
 
-    def recursive_build_alias(path, alias_map):
-        parts = path.split('.')
-        if len(parts) > 1:
-            # Recursively handle nesting
-            new_alias = snake_case(parts[-1])
-            if new_alias in alias_map:
-                # If there's a conflict, prepend the parent's name
-                new_alias = snake_case(parts[-2]) + '_' + new_alias
-            alias_map[parts[-1]] = new_alias  # Map the original to the new alias
-        else:
-            # Base case: simple column
-            alias_map[path] = snake_case(path)
-
-    # Create an alias map
-    alias_map = {}
-    for field in df.schema.fields:
-        recursive_build_alias(field.name, alias_map)
-
-    # Construct the select statement
-    select_expr = [col(name).alias(alias_map[name]) for name in alias_map]
-    return df.select(*select_expr)
-
-# Usage example:
-# Assuming `df` is your DataFrame loaded with the full schema
-new_df = generate_select_statement(df)
-new_df.show()
+    select_expr = [col(name).alias(aliases[name]) for name in column_names]
+    return df.select(*select_expr
