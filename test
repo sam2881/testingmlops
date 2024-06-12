@@ -5,23 +5,20 @@ def generate_select_expression(df):
 
     for col_name in df.columns:
         parts = col_name.split('.')
-        simple_name = parts[-1]  # Last part of the dot-separated name
+        last_part = parts[-1]  # Last part of the dot-separated name
+        simple_name = last_part.split('_')[-1]  # Last part of the name after split by '_'
         snake_case_name = camel_to_snake(simple_name)
-        original_snake_case_name = snake_case_name
-
-        # If there's a duplicate, add parent names until it's unique
-        count = 1
-        while snake_case_name in seen_aliases:
-            if count == 1:
-                parent_name = camel_to_snake(parts[-2]) if len(parts) > 1 else 'base'
-                snake_case_name = parent_name + '_' + original_snake_case_name
+        
+        # Handle duplicates by appending the parent's name in snake_case
+        if snake_case_name in seen_aliases:
+            if len(parts) > 1:
+                parent_name = parts[-2]  # Use the second last part if available
+                snake_case_name = camel_to_snake(parent_name) + '_' + snake_case_name
             else:
-                further_parent_name = camel_to_snake(parts[-count]) if len(parts) > count else 'base'
-                snake_case_name = further_parent_name + '_' + snake_case_name
-            count += 1
-
+                # If there are no parts to derive a parent name, use "base" as a last resort
+                snake_case_name = 'base_' + snake_case_name
+        
         seen_aliases.add(snake_case_name)
         select_expr.append(col(".".join(parts)).alias(snake_case_name))
-        print(f"Column: {col_name} -> Alias: {snake_case_name}")  # Debugging output
 
     return df.select(*select_expr)
