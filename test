@@ -1,20 +1,20 @@
 def generate_select_expressions(schema, parent_prefix=""):
+    """Generate select expressions based on the DataFrame schema with snake_case aliases."""
     expressions = []
     for field in schema.fields:
         full_field_name = f"{parent_prefix}{field.name}" if parent_prefix else field.name
         if isinstance(field.dataType, StructType):
-            # Recursive call for nested StructType
             nested_expressions = generate_select_expressions(field.dataType, full_field_name + ".")
             expressions.extend(nested_expressions)
-        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            # For arrays of Structs, we need to handle the structure of the elements
-            # Explode the array to flatten it and then handle the structure
-            exploded_field_name = f"exploded_{full_field_name}"
-            expressions.append(explode(col(full_field_name)).alias(exploded_field_name))
-            nested_expressions = generate_select_expressions(field.dataType.elementType, exploded_field_name + ".")
-            expressions.extend(nested_expressions)
+        elif isinstance(field.dataType, ArrayType):
+            if isinstance(field.dataType.elementType, StructType):
+                nested_expressions = generate_select_expressions(field.dataType.elementType, full_field_name + ".")
+                for expr in nested_expressions:
+                    expressions.append(expr.alias(camel_to_snake(full_field_name + "_" + expr._jc.toString().split(" AS ")[1])))
+            else:
+                snake_case_alias = camel_to_snake(full_field_name)
+                expressions.append(col(full_field_name).alias(snake_case_alias))
         else:
-            # Direct fields with aliasing to handle nested naming
-            snake_case_alias = camel_to_snake(full_field_name.replace('.', '_'))
+            snake_case_alias = camel_to_snake(full_field_name)
             expressions.append(col(full_field_name).alias(snake_case_alias))
     return expressions
