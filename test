@@ -1,5 +1,4 @@
 def generate_select_expressions(schema, parent_prefix=""):
-    """Generate select expressions with unique aliases for PySpark DataFrame schema to handle duplicates."""
     expressions = []
     for field in schema.fields:
         full_field_name = f"{parent_prefix}{field.name}" if parent_prefix else field.name
@@ -8,16 +7,14 @@ def generate_select_expressions(schema, parent_prefix=""):
             nested_expressions = generate_select_expressions(field.dataType, full_field_name + ".")
             expressions.extend(nested_expressions)
         elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            # Handling arrays of Structs by appending parent field name to the alias
-            nested_expressions = generate_select_expressions(field.dataType.elementType, full_field_name + ".element.")
-            for expr in nested_expressions:
-                array_field_name = expr._jc.toString().split(" AS ")[0]
-                array_field_alias = expr._jc.toString().split(" AS ")[1]
-                # Modify the alias to prepend the parent array name, ensuring uniqueness
-                new_alias = camel_to_snake(f"{full_field_name}_{array_field_alias}")
-                expressions.append(col(array_field_name).alias(new_alias))
+            # For arrays of Structs, we need to handle the structure of the elements
+            # Explode the array to flatten it and then handle the structure
+            exploded_field_name = f"exploded_{full_field_name}"
+            expressions.append(explode(col(full_field_name)).alias(exploded_field_name))
+            nested_expressions = generate_select_expressions(field.dataType.elementType, exploded_field_name + ".")
+            expressions.extend(nested_expressions)
         else:
-            # Direct fields
-            snake_case_alias = camel_to_snake(full_field_name)
+            # Direct fields with aliasing to handle nested naming
+            snake_case_alias = camel_to_snake(full_field_name.replace('.', '_'))
             expressions.append(col(full_field_name).alias(snake_case_alias))
     return expressions
