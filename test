@@ -1,22 +1,21 @@
-def generate_select_expressions(df):
-    seen = {}
-    expressions = []
+def generate_select_expression(df):
+    """Generate a DataFrame select expression with properly aliased columns, handling duplicates."""
+    seen_aliases = set()
+    select_expr = []
 
-    for full_name in df.columns:
-        parts = full_name.split('.')
-        simple_name = parts[-1]
-        alias_name = camel_to_snake(simple_name)
+    for col_name in df.columns:
+        parts = col_name.split('.')
+        last_part = parts[-1]  # Last part of the dot-separated name
+        simple_name = camel_to_snake(last_part)  # Convert to snake case
+        snake_case_name = simple_name
+        
+        # Handle duplicates by appending the parent's name in snake_case
+        while snake_case_name in seen_aliases:
+            parent_index = -2 if len(parts) > 1 else None  # Ensures there is a parent part
+            parent_name = camel_to_snake(parts[parent_index]) if parent_index else 'base'
+            snake_case_name = f"{parent_name}_{simple_name}"
+        
+        seen_aliases.add(snake_case_name)
+        select_expr.append(col(col_name).alias(snake_case_name))
 
-        # Ensure uniqueness by appending parent names if necessary
-        temp_name = alias_name
-        depth = 2
-        while temp_name in seen:
-            if len(parts) >= depth:
-                parent_name = camel_to_snake(parts[-depth])
-                temp_name = f"{parent_name}_{alias_name}"
-            depth += 1
-
-        seen[temp_name] = True
-        expressions.append(col(full_name).alias(temp_name))
-
-    return df.select(*expressions)
+    return df.select(*select_expr)
