@@ -1,34 +1,42 @@
-def generate_select_expressions(schema, parent_prefix="", parent_aliases=None):
-    """Generate select expressions for PySpark DataFrame based on the schema with snake_case aliases."""
-    if parent_aliases is None:
-        parent_aliases = {}
-    
-    expressions = []
-    for field in schema.fields:
-        field_name = field.name
-        full_field_name = f"{parent_prefix}{field.name}" if parent_prefix else field.name
-        snake_case_alias = camel_to_snake(full_field_name)
-
-        # Ensure unique aliases by checking against previously used aliases
-        original_snake_case_alias = snake_case_alias
-        count = 1
-        while snake_case_alias in parent_aliases:
-            snake_case_alias = f"{original_snake_case_alias}_{count}"
-            count += 1
-        parent_aliases[snake_case_alias] = True
-        
+def flatten_struct(fields, parent_prefix=""):
+    """Recursively flatten struct fields and avoid explode."""
+    flat_fields = []
+    for field in fields:
+        new_field_path = f"{parent_prefix}{field.name}" if parent_prefix else field.name
         if isinstance(field.dataType, StructType):
-            # Recursive call for nested StructType
-            nested_expressions = generate_select_expressions(field.dataType, full_field_name + ".", parent_aliases)
-            expressions.extend(nested_expressions)
+            flat_fields += flatten_struct(field.dataType.fields, new_field_path + ".")
         elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            # Explode arrays and then handle nested structures
-            exploded_field_name = f"exploded_{snake_case_alias}"
-            expressions.append(explode(col(full_field_name)).alias(exploded_field_name))
-            nested_expressions = generate_select_expressions(field.dataType.elementType, exploded_field_name + ".", parent_aliases)
-            expressions.extend(nested_expressions)
+            # For arrays, we typically need to explode, but we'll handle them in a special manner to avoid multi-explode issues
+            flat_fields.append((field, new_field_path))
         else:
-            # Simple types
-            expressions.append(col(full_field_name).alias(snake_case_alias))
+            # Simple field, add to results directly
+            snake_case_alias = camel_to_snake(new_field_path)
+            flat_fields.append((col(new_field_path).alias(snake_case_alias), None))
+    return flat_fields
 
-    return expressions
+def generate_select_statements(df):
+    """Generate select statements while handling arrays separately."""
+    flat_fields = flatten_struct(df.schema.fields)
+    normal_fields = []
+    explode_fields = []
+    
+    for field, path in flat_fields:
+        if path is None:
+            normal_fields.append(field)
+        else:
+            # Assuming only one level of arrays for simplicity; complex nesting will need more handling
+            explode_alias = camel_to_snake("exploded_" + path.replace('.', '_'))
+            explode_statement = f"explode_outer({path}) AS {explode_alias}"
+            explode_fields.append(explode_statement)
+    
+    select_statements = []
+    if explode_fields:
+        # Handle explode separately if present
+        df = df.selectExpr(*explode_fields)
+        for field, path in flat_fields:
+            if path is not None:
+                field_expr = field._jc.toString().replace(path, explode_alias)
+                select_statements.append(field_expr)
+    select_statements += [f._jc.toString() for f in normal_fields]
+    
+    return select_statements
