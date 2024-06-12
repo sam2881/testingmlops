@@ -1,29 +1,36 @@
 def generate_select_expressions(schema, parent_prefix=""):
-    """
-    Generate select expressions based on the DataFrame schema with snake_case aliases.
-    Handles nested structures and arrays by creating a list of transformation steps.
-    """
+    """Generate select expressions based on the DataFrame schema with snake_case aliases."""
     expressions = []
-    transformations = []
+    seen_aliases = set()
+
+    def handle_field(field, full_field_name):
+        snake_case_alias = camel_to_snake(full_field_name.replace('.', '_'))
+
+        # Avoid duplicate aliases by appending parent names if needed
+        original_alias = snake_case_alias
+        count = 1
+        while snake_case_alias in seen_aliases:
+            parts = full_field_name.split('.')
+            if len(parts) > count:
+                snake_case_alias = camel_to_snake('_'.join(parts[-(count+1):]))
+            count += 1
+        seen_aliases.add(snake_case_alias)
+
+        return col(full_field_name).alias(snake_case_alias)
+
     for field in schema.fields:
         full_field_name = f"{parent_prefix}{field.name}" if parent_prefix else field.name
         if isinstance(field.dataType, StructType):
             # Recursive call for nested StructType
-            nested_exprs, nested_transforms = generate_select_expressions(field.dataType, full_field_name + ".")
-            expressions.extend(nested_exprs)
-            transformations.extend(nested_transforms)
+            nested_expressions = generate_select_expressions(field.dataType, full_field_name + ".")
+            expressions.extend(nested_expressions)
         elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            # Prepare to handle array with explode in separate transformations
+            # Handle array of StructTypes by exploding and then applying the same logic to the elements
             exploded_field = f"exploded_{camel_to_snake(field.name)}"
-            transformations.append((explode(col(full_field_name)), exploded_field))
-            nested_exprs, nested_transforms = generate_select_expressions(field.dataType.elementType, exploded_field + ".")
-            expressions.extend(nested_exprs)
-            transformations.extend(nested_transforms)
+            expressions.append(explode(col(full_field_name)).alias(exploded_field))
+            nested_expressions = generate_select_expressions(field.dataType.elementType, exploded_field + ".")
+            expressions.extend(nested_expressions)
         else:
-            # Generate snake_case alias for simple types
-            snake_case_alias = camel_to_snake(full_field_name.replace('.', '_'))
-            expressions.append(col(full_field_name).alias(snake_case_alias))
-    return expressions, transformations
+            expressions.append(handle_field(field, full_field_name))
 
-for transform, alias in transformations:
-    df = df.withColumn(alias, transform)
+    return expressions
