@@ -2,7 +2,7 @@ def extract_column_names(schema, parent_prefix="", parent_alias=""):
     """Extract column names based on the DataFrame schema."""
     column_names = []
     for field in schema.fields:
-        full_field_name = f"{parent_prefix}{field.name}" if parent_prefix else field.name
+        full_field_name = f"{parent_prefix}.{field.name}" if parent_prefix else field.name
         if parent_alias:
             full_field_name = f"{parent_alias}.{field.name}"
         
