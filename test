@@ -1,29 +1,21 @@
 def generate_select_expressions(schema, parent_prefix=""):
-    """Recursively generate select expressions from the schema, handling arrays and structs."""
+    """Generate select expressions based on the DataFrame schema with snake_case aliases."""
     expressions = []
-    path_tracker = {}  # Track paths to handle duplicates
-
-    def process_field(field, current_path):
-        # Generate the alias using snake_case conversion
-        alias = camel_to_snake(current_path.replace('.', '_'))
-        if alias in path_tracker:
-            # If duplicate, prepend the parent field name to make it unique
-            parent_field = current_path.split('.')[-2]
-            alias = camel_to_snake(parent_field + '_' + field.name)
-        path_tracker[alias] = current_path
-        return col(current_path).alias(alias)
-
-    def parse_schema(schema, prefix=""):
-        for field in schema.fields:
-            current_path = f"{prefix}.{field.name}".strip('.')
-            if isinstance(field.dataType, StructType):
-                parse_schema(field.dataType, current_path)
-            elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-                # For arrays of structs, handle as a single column initially
-                # Note: You might choose to explode them during actual DataFrame transformations
-                expressions.append(process_field(field, current_path))
-            else:
-                expressions.append(process_field(field, current_path))
-
-    parse_schema(schema)
+    for field in schema.fields:
+        full_field_name = f"{parent_prefix}{field.name}" if parent_prefix else field.name
+        if isinstance(field.dataType, StructType):
+            # Recursive call for nested StructType
+            nested_expressions = generate_select_expressions(field.dataType, full_field_name + ".")
+            expressions.extend(nested_expressions)
+        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
+            # Special handling for arrays of structs
+            nested_expressions = generate_select_expressions(field.dataType.elementType, full_field_name + ".")
+            for expr in nested_expressions:
+                # Append the parent field name to avoid duplicates and clarify the origin of fields
+                prefixed_alias = camel_to_snake(expr._jc.toString().split(" AS ")[1])
+                prefixed_alias = f"{camel_to_snake(full_field_name)}_{prefixed_alias}"
+                expressions.append(col(expr._jc.toString().split(" AS ")[0]).alias(prefixed_alias))
+        else:
+            snake_case_alias = camel_to_snake(full_field_name)
+            expressions.append(col(full_field_name).alias(snake_case_alias))
     return expressions
