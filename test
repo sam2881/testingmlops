@@ -5,12 +5,14 @@ def generate_select_expression(df):
     select_expr = []
 
     for col_name in column_names:
-        simple_name = col_name.split('.')[-1]
+        parts = col_name.split('.')
+        simple_name = parts[-1]  # Last part of the name
         snake_case_name = camel_to_snake(simple_name)
+        # Handle duplicates by appending the parent's name in snake_case
         if snake_case_name in seen_aliases:
-            parent = col_name.split('.')[-2]
-            snake_case_name = camel_to_snake(parent) + '_' + snake_case_name
-        seen_aliases[snake_case_name] = col_name
+            parent_name = parts[-2] if len(parts) > 1 else 'base'
+            snake_case_name = camel_to_snake(parent_name) + '_' + snake_case_name
+        seen_aliases[snake_case_name] = True
         select_expr.append(col(col_name).alias(snake_case_name))
 
     return df.select(*select_expr)
