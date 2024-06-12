@@ -1,21 +1,29 @@
-def flatten_df(df, prefix=""):
+def flatten_df(df, path=None):
     """
     Recursively flatten a DataFrame with complex nested structures (structs and arrays).
+    Add parent names to column names if there are naming conflicts.
     """
-    flat_cols = []
-    complex_cols = []
+    flat_cols = []  # List to collect columns (already flattened)
+    complex_cols = []  # List to collect complex columns (structs or arrays)
 
+    # Iterate over each field in the DataFrame schema
     for field in df.schema.fields:
-        name = field.name
-        dtype = field.dataType
-        flat_name = f"{prefix}.{name}" if prefix else name
+        # Build the path (prefix) for the current field
+        col_name = f"{path}.{field.name}" if path else field.name
 
-        if isinstance(dtype, StructType):
-            complex_cols += flatten_df(df.select(f"{flat_name}.*"), flat_name)
-        elif isinstance(dtype, ArrayType) and isinstance(dtype.elementType, StructType):
-            exploded_df = df.withColumn(name, explode_outer(col(name)))
-            complex_cols += flatten_df(exploded_df, flat_name)
+        # Check field type and handle accordingly
+        if isinstance(field.dataType, StructType):
+            # Recurse into StructType
+            nested_cols = flatten_df(df.select(f"{col_name}.*"), col_name)
+            complex_cols.extend(nested_cols)
+        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
+            # If ArrayType contains StructType, explode and recurse
+            df = df.withColumn(col_name, explode_outer(col(col_name)))
+            nested_cols = flatten_df(df.select(f"{col_name}.*"), col_name)
+            complex_cols.extend(nested_cols)
         else:
-            flat_cols.append(col(flat_name).alias(flat_name.replace(".", "_")))
+            # For other types, use directly
+            # Using alias to ensure unique column names
+            flat_cols.append(col(col_name).alias(col_name.replace(".", "_")))
 
     return flat_cols + complex_cols
