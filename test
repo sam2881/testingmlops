@@ -1,27 +1,23 @@
-def generate_select_expressions(schema, parent_prefix="", used_names=set()):
-    """Generate select expressions based on the DataFrame schema with snake_case aliases, handling duplicates."""
-    expressions = []
+def extract_column_names(schema, parent_prefix="", used_names=set()):
+    """Extract column names based on the DataFrame schema, only using the last part of the name, handling duplicates."""
+    column_names = []
     for field in schema.fields:
-        field_name = field.name
-        snake_case_name = camel_to_snake(field_name)
-        full_path = f"{parent_prefix}.{field_name}" if parent_prefix else field_name
-
-        # Check for duplicates and prepend parent name if necessary
+        snake_case_name = camel_to_snake(field.name)
+        full_name = f"{parent_prefix}.{field.name}" if parent_prefix else field.name
         if snake_case_name in used_names:
-            parent_snake = camel_to_snake(parent_prefix.split('.')[-1])
-            snake_case_name = f"{parent_snake}_{snake_case_name}"
+            snake_case_name = f"{camel_to_snake(parent_prefix.split('.')[-1])}_{snake_case_name}"
         used_names.add(snake_case_name)
 
         if isinstance(field.dataType, StructType):
-            nested_expressions = generate_select_expressions(field.dataType, full_path, used_names)
-            expressions.extend(nested_expressions)
+            nested_columns = extract_column_names(field.dataType, full_name, used_names)
+            column_names.extend(nested_columns)
         elif isinstance(field.dataType, ArrayType):
             element_type = field.dataType.elementType
             if isinstance(element_type, StructType):
-                nested_expressions = generate_select_expressions(element_type, f"{full_path}.element", used_names)
-                expressions.extend(nested_expressions)
+                nested_columns = extract_column_names(element_type, f"{full_name}.element", used_names)
+                column_names.extend(nested_columns)
             else:
-                expressions.append(col(full_path).alias(snake_case_name))
+                column_names.append((full_name, snake_case_name))
         else:
-            expressions.append(col(full_path).alias(snake_case_name))
-    return expressions
+            column_names.append((full_name, snake_case_name))
+    return column_names
