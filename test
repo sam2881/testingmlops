@@ -1,30 +1,28 @@
-def process_nested_fields(df, field_name, path=''):
-    """Generate select expressions for nested fields, managing arrays and structures."""
-    select_exprs = []
-    for field in df.schema[field_name].dataType:
-        full_field_name = f"{path}{field_name}.{field.name}" if path else f"{field_name}.{field.name}"
-        if isinstance(field.dataType, StructType):
-            select_exprs += process_nested_fields(df, field.name, full_field_name + ".")
-        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            # Explode the array first to handle nested structures
-            exploded_df = df.withColumn(full_field_name, explode_outer(col(full_field_name)))
-            select_exprs += process_nested_fields(exploded_df, field.name, full_field_name + ".")
-        else:
-            alias = camel_to_snake(full_field_name.replace('.', '_'))
-            select_exprs.append(col(full_field_name).alias(alias))
-    return select_exprs
-
-def generate_select_statements(df):
-    """Wrapper function to generate select expressions for the entire DataFrame schema."""
+def generate_select_expressions(schema, parent_prefix=""):
     expressions = []
-    for field in df.schema.fields:
-        if isinstance(field.dataType, StructType):
-            expressions += process_nested_fields(df, field.name)
-        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            # Explode and handle nested structures within arrays at the top level
-            exploded_df = df.withColumn(field.name, explode_outer(col(field.name)))
-            expressions += process_nested_fields(exploded_df, field.name, field.name + ".")
-        else:
-            snake_case_alias = camel_to_snake(field.name)
-            expressions.append(col(field.name).alias(snake_case_alias))
+    duplicates = set()
+    
+    def add_expression(field_path, alias):
+        if alias in duplicates:
+            # Append parent field to alias if it's a duplicate
+            parts = field_path.split('.')
+            if len(parts) > 1:
+                alias = camel_to_snake(parts[-2] + '_' + parts[-1])
+        expressions.append(col(field_path).alias(alias))
+        duplicates.add(alias)
+
+    def parse_schema(schema, prefix=""):
+        for field in schema.fields:
+            current_path = f"{prefix}.{field.name}".strip('.')
+            if isinstance(field.dataType, StructType):
+                parse_schema(field.dataType, current_path)
+            elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
+                # Exploding arrays to simplify, but this might need to be handled more subtly depending on use case
+                exploded_path = f"exploded_{current_path.replace('.', '_')}"
+                expressions.append(explode(col(current_path)).alias(exploded_path))
+                parse_schema(field.dataType.elementType, exploded_path)
+            else:
+                add_expression(current_path, camel_to_snake(field.name))
+
+    parse_schema(schema)
     return expressions
