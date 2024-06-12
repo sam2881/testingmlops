@@ -1,15 +1,31 @@
-select_exprs = []
-for field in df.schema.fields:
-    field_name = field.name
-    if isinstance(field.dataType, ArrayType):
-        array_col = col(field_name)
-        if isinstance(field.dataType.elementType, StructType):
-            struct_fields = [col(f"{field_name}.{nested_field.name}").alias(nested_field.name) for nested_field in field.dataType.elementType.fields]
+if schema_dict:
+    pyspark_schema = convert_to_spark_schema(schema_dict, schema_dict.get('definitions'))
+
+    # Create an empty DataFrame with the schema
+    df = spark.createDataFrame([], pyspark_schema)
+
+    # Generate select expressions based on the schema
+    select_exprs = []
+    for field in df.schema.fields:
+        field_name = field.name
+        if isinstance(field.dataType, ArrayType):
+            array_col = col(field_name)
+            if isinstance(field.dataType.elementType, StructType):
+                struct_fields = [col(f"{field_name}.{nested_field.name}").alias(nested_field.name) for nested_field in field.dataType.elementType.fields]
+                select_exprs.extend(struct_fields)
+            else:
+                select_exprs.append(array_col)
+        elif isinstance(field.dataType, StructType):
+            struct_fields = [col(f"{field_name}.{nested_field.name}").alias(nested_field.name) for nested_field in field.dataType.fields]
             select_exprs.extend(struct_fields)
         else:
-            select_exprs.append(array_col)
-    elif isinstance(field.dataType, StructType):
-        struct_fields = [col(f"{field_name}.{nested_field.name}").alias(nested_field.name) for nested_field in field.dataType.fields]
-        select_exprs.extend(struct_fields)
-    else:
-        select_exprs.append(col(field_name))
+            select_exprs.append(col(field_name))
+
+    # Select and show DataFrame with generated select expressions
+    try:
+        df_select = df.select(*select_exprs)
+        df_select.show(truncate=False)
+    except Exception as e:
+        print("Error displaying DataFrame:", e)
+else:
+    print("Error: JSON schema could not be loaded.")
