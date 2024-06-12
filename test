@@ -1,18 +1,27 @@
-def generate_select_expression(df):
-    """Generate a DataFrame select expression with properly aliased columns."""
-    column_names = df.columns
-    seen_aliases = {}
-    select_expr = []
+def generate_select_expressions(schema, parent_prefix="", used_names=set()):
+    """Generate select expressions based on the DataFrame schema with snake_case aliases, handling duplicates."""
+    expressions = []
+    for field in schema.fields:
+        field_name = field.name
+        snake_case_name = camel_to_snake(field_name)
+        full_path = f"{parent_prefix}.{field_name}" if parent_prefix else field_name
 
-    for col_name in column_names:
-        parts = col_name.split('.')
-        simple_name = parts[-1]  # Last part of the name
-        snake_case_name = camel_to_snake(simple_name)
-        # Handle duplicates by appending the parent's name in snake_case
-        if snake_case_name in seen_aliases:
-            parent_name = parts[-2] if len(parts) > 1 else 'base'
-            snake_case_name = camel_to_snake(parent_name) + '_' + snake_case_name
-        seen_aliases[snake_case_name] = True
-        select_expr.append(col(col_name).alias(snake_case_name))
+        # Check for duplicates and prepend parent name if necessary
+        if snake_case_name in used_names:
+            parent_snake = camel_to_snake(parent_prefix.split('.')[-1])
+            snake_case_name = f"{parent_snake}_{snake_case_name}"
+        used_names.add(snake_case_name)
 
-    return df.select(*select_expr)
+        if isinstance(field.dataType, StructType):
+            nested_expressions = generate_select_expressions(field.dataType, full_path, used_names)
+            expressions.extend(nested_expressions)
+        elif isinstance(field.dataType, ArrayType):
+            element_type = field.dataType.elementType
+            if isinstance(element_type, StructType):
+                nested_expressions = generate_select_expressions(element_type, f"{full_path}.element", used_names)
+                expressions.extend(nested_expressions)
+            else:
+                expressions.append(col(full_path).alias(snake_case_name))
+        else:
+            expressions.append(col(full_path).alias(snake_case_name))
+    return expressions
