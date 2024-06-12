@@ -11,12 +11,10 @@ def generate_select_expressions(schema, parent_prefix="", parent_alias=""):
             nested_expressions = generate_select_expressions(field.dataType, full_field_name + ".", alias_name)
             expressions.extend(nested_expressions)
         elif isinstance(field.dataType, ArrayType):
-            if isinstance(field.dataType.elementType, StructType):
-                nested_struct = field.dataType.elementType
-                for nested_field in nested_struct.fields:
-                    nested_full_field_name = f"{full_field_name}.element.{nested_field.name}"
-                    nested_alias_name = f"{alias_name}_{camel_to_snake(nested_field.name)}"
-                    expressions.append(col(nested_full_field_name).alias(nested_alias_name))
+            element_type = field.dataType.elementType
+            if isinstance(element_type, StructType):
+                nested_expressions = generate_select_expressions(element_type, full_field_name + ".element.", alias_name)
+                expressions.extend(nested_expressions)
             else:
                 expressions.append(col(full_field_name).alias(alias_name))
         else:
