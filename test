@@ -1,29 +1,27 @@
 import json
 import re
+import yaml
 from pathlib import Path
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, explode_outer
 from pyspark.sql.types import *
 
 def read_json_file(file_path):
-    """Read and return the JSON schema from a file."""
     with open(file_path, 'r') as file:
         return json.load(file)
 
 def resolve_reference(ref, definitions):
-    """Resolve $ref to actual defined schema, handling nested references."""
     if isinstance(ref, dict) and '$ref' in ref:
         ref_key = ref['$ref'].replace('#/definitions/', '')
         return resolve_reference(definitions.get(ref_key, {}), definitions)
     return ref
 
 def convert_to_spark_schema(json_schema, definitions):
-    """Convert JSON schema to PySpark schema, handling types and references."""
     if isinstance(json_schema, dict):
         if 'type' not in json_schema:
             if '$ref' in json_schema:
                 return convert_to_spark_schema(resolve_reference(json_schema['$ref'], definitions), definitions)
-            return None  # Safe exit if unable to resolve schema
+            return None
 
         data_type = json_schema['type']
         if data_type == 'object':
@@ -38,14 +36,9 @@ def convert_to_spark_schema(json_schema, definitions):
             return StringType()  # Default for unspecified complex types
     elif isinstance(json_schema, list):
         return convert_to_spark_schema(json_schema[0], definitions) if json_schema else None
-    return None  # Return None for any non-dictionary or empty input
-
-def camel_to_snake(name):
-    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
-    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+    return None
 
 def flatten(df):
-    """Flatten complex structures in a DataFrame, maintaining full path names without underscores."""
     complex_fields = dict([(field.name, field.dataType)
                            for field in df.schema.fields
                            if isinstance(field.dataType, (ArrayType, StructType))])
@@ -61,28 +54,12 @@ def flatten(df):
                                if isinstance(field.dataType, (ArrayType, StructType))])
     return df
 
-def generate_select_expression(df):
-    """Generate a DataFrame select expression with properly aliased columns."""
-    seen_aliases = set()
-    select_expr = []
-    for col_name in df.columns:
-        snake_case_name = camel_to_snake(col_name.split('.')[-1])
-        original_snake_case_name = snake_case_name
-        count = 1
-        while snake_case_name in seen_aliases:
-            snake_case_name = f"{original_snake_case_name}_{count}"
-            count += 1
-        seen_aliases.add(snake_case_name)
-        select_expr.append(col(col_name).alias(snake_case_name))
-    return df.select(*select_expr)
-
-def generate_pyspark_script(schema, output_file_path, schema_file_path):
-    """Generate a PySpark script to load and process JSON data, including dynamic flattening."""
-    if schema is None:
-        raise ValueError("The schema is None, cannot generate PySpark script.")
-
+def generate_pyspark_script(config, schema):
     schema_json = json.dumps(schema.jsonValue(), indent=4)
     schema_json = schema_json.replace('true', 'True').replace('false', 'False')
+    schema_file_path = config['pyspark_schema_path']
+    output_file_path = config['pyspark_script_output_path']
+    schema_file_stem = Path(schema_file_path).stem
 
     with open(schema_file_path, 'w') as schema_file:
         schema_file.write(f"""
@@ -95,15 +72,13 @@ def get_schema():
     pyspark_code = f"""
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, explode_outer
-from pyspark.sql.types import *
-import {Path(schema_file_path).stem} as schema_module
+from {schema_file_stem} import get_schema
 
 spark = SparkSession.builder.appName("JsonToDataFrame").getOrCreate()
-schema = schema_module.get_schema()
-df = spark.read.schema(schema).json("input_data.json")
+df = spark.read.schema(get_schema()).json("{config['json_data_input_path']}")
 
 df_flattened = flatten(df)
-final_df = generate_select_expression(df_flattened)
+final_df = df_flattened  # Assuming you have a transformation or selection step here
 
 final_df.show(truncate=False)
 """
@@ -112,15 +87,14 @@ final_df.show(truncate=False)
         file.write(pyspark_code)
 
 def main():
-    """Main function to execute the script. Reads configuration, processes JSON data, and generates a schema and a PySpark script."""
-    base_directory = Path(__file__).parent
-    schema_path = base_directory / 'json_schema.json'
-    pyspark_script_path = base_directory / 'generated_pyspark_script.py'
-    pyspark_schema_path = base_directory / 'pyspark_schema.py'
+    config_path = 'config.yaml'
+    with open(config_path, 'r') as file:
+        config = yaml.safe_load(file)
 
-    schema_dict = read_json_file(schema_path)
-    spark_schema = convert_to_spark_schema(schema_dict, {})
-    generate_pyspark_script(spark_schema, pyspark_script_path, pyspark_schema_path)
+    json_schema = read_json_file(config['json_schema_path'])
+    definitions = json_schema.get('definitions', {})
+    pyspark_schema = convert_to_spark_schema(json_schema, definitions)
+    generate_pyspark_script(config, pyspark_schema)
 
 if __name__ == "__main__":
     main()
