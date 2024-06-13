@@ -1,37 +1,38 @@
 from pyspark.sql.functions import col, explode_outer
 
-def flatten(df):
+def flatten(df, root_name=''):
     """
-    Flattens a DataFrame by expanding nested structures and arrays into top-level columns,
-    maintaining the full hierarchical dot-separated paths as column aliases.
+    Recursively flattens the structure and arrays in the DataFrame, maintaining complete hierarchical paths.
     """
-    complex_fields = dict([(field.name, field.dataType)
-                           for field in df.schema.fields
-                           if isinstance(field.dataType, (ArrayType, StructType))])
+    # Finding complex fields in the DataFrame schema
+    complex_fields = {f.name: f.dataType for f in df.schema.fields if isinstance(f.dataType, (ArrayType, StructType))}
     
+    # Processing each complex field
     while complex_fields:
-        next_complex_fields = {}
-        for col_name, data_type in complex_fields.items():
-            # If StructType, convert all sub-elements to columns with hierarchical names
-            if isinstance(data_type, StructType):
-                for field in data_type.fields:
-                    new_col_name = f"{col_name}.{field.name}"
-                    df = df.withColumn(new_col_name, col(f"{col_name}.{field.name}"))
-                df = df.drop(col_name)
-
-            # If ArrayType with StructType elements, explode the array and flatten
-            elif isinstance(data_type, ArrayType) and isinstance(data_type.elementType, StructType):
-                df = df.withColumn(col_name, explode_outer(col(col_name)))
-                for field in data_type.elementType.fields:
-                    new_col_name = f"{col_name}.{field.name}"
-                    df = df.withColumn(new_col_name, col(f"{col_name}.{field.name}"))
-                df = df.drop(col_name)
-
-            # Track any newly expanded fields for further processing in the next iteration
-            for field in df.schema.fields:
-                if isinstance(field.dataType, (ArrayType, StructType)) and field.name not in complex_fields:
-                    next_complex_fields[field.name] = field.dataType
-
-        complex_fields = next_complex_fields
+        new_complex_fields = {}
+        for field_name, dtype in complex_fields.items():
+            full_field_name = f"{root_name}.{field_name}".strip('.')
+            
+            if isinstance(dtype, StructType):
+                # Flatten StructType fields into columns
+                for nested_field in dtype.fields:
+                    nested_col_name = f"{full_field_name}.{nested_field.name}"
+                    df = df.withColumn(nested_col_name, col(f"{full_field_name}.{nested_field.name}"))
+                df = df.drop(full_field_name)
+            
+            elif isinstance(dtype, ArrayType) and isinstance(dtype.elementType, StructType):
+                # Explode Arrays and recursively flatten
+                df = df.withColumn(full_field_name, explode_outer(col(full_field_name)))
+                for nested_field in dtype.elementType.fields:
+                    nested_col_name = f"{full_field_name}.{nested_field.name}"
+                    df = df.withColumn(nested_col_name, col(f"{full_field_name}.{nested_field.name}"))
+                df = df.drop(full_field_name)
+        
+            # Track newly expanded fields for further processing
+            for new_field in df.schema.fields:
+                if isinstance(new_field.dataType, (ArrayType, StructType)) and new_field.name not in complex_fields:
+                    new_complex_fields[new_field.name] = new_field.dataType
+        
+        complex_fields = new_complex_fields
 
     return df
