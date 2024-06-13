@@ -3,28 +3,37 @@ from pyspark.sql.functions import col, explode_outer
 def flatten(df):
     """
     Flattens a DataFrame by expanding nested structures and arrays into top-level columns,
-    while preserving the original dot-separated column names. This version retains the full path without introducing
-    underscores, which may help in maintaining clarity in highly nested data schemas.
+    maintaining the original dot-separated column names without introducing underscores.
     """
-    complex_fields = [(field.name, field.dataType) for field in df.schema.fields
-                      if isinstance(field.dataType, (ArrayType, StructType))]
-
+    complex_fields = dict([(field.name, field.dataType)
+                           for field in df.schema.fields
+                           if isinstance(field.dataType, (ArrayType, StructType))])
     while complex_fields:
-        col_name, data_type = complex_fields.pop(0)
+        col_name = list(complex_fields.keys())[0]
+        data_type = complex_fields[col_name]
+        print("Processing: " + col_name + " Type: " + str(type(data_type)))
+
         if isinstance(data_type, StructType):
             # Expand struct fields directly
             for field in data_type.fields:
                 full_field_name = f"{col_name}.{field.name}"
-                df = df.withColumn(full_field_name, col(full_field_name))
-                complex_fields.append((full_field_name, field.dataType))
+                df = df.withColumn(full_field_name, col(f"{col_name}.{field.name}"))
+                complex_fields[full_field_name] = field.dataType
 
         elif isinstance(data_type, ArrayType) and isinstance(data_type.elementType, StructType):
-            # Handle arrays by exploding them first
+            # Explode arrays of structs and then expand their fields
             df = df.withColumn(col_name, explode_outer(col(col_name)))
-            # Then expand their struct fields
             for field in data_type.elementType.fields:
                 full_field_name = f"{col_name}.{field.name}"
                 df = df.withColumn(full_field_name, col(full_field_name))
-                complex_fields.append((full_field_name, field.dataType))
+                complex_fields[full_field_name] = field.dataType
+
+        # Remove the processed column from the dictionary
+        del complex_fields[col_name]
+
+        # Recompute remaining complex fields
+        complex_fields.update([(field.name, field.dataType)
+                               for field in df.schema.fields
+                               if field.name in complex_fields])
 
     return df
