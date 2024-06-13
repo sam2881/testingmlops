@@ -2,8 +2,8 @@ from pyspark.sql.functions import col, explode_outer
 
 def flatten(df):
     """
-    Flatten a DataFrame by expanding nested structures and arrays into top-level columns,
-    while maintaining the original dot-separated column names.
+    Flattens a DataFrame by expanding nested structures and arrays into top-level columns,
+    while maintaining the original dot-separated column names without introducing underscores.
     """
     # Track fields to be processed with their original paths
     complex_fields = dict([(field.name, field.dataType)
@@ -16,7 +16,7 @@ def flatten(df):
             # Flatten StructType fields
             if isinstance(data_type, StructType):
                 expanded = [col(f"{col_name}.{field.name}").alias(f"{col_name}.{field.name}")
-                            for field in data_type.fields]
+                            for field in data_data.fields]
                 df = df.select("*", *expanded).drop(col_name)
 
             # Explode and flatten ArrayType fields that contain StructType
