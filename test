@@ -1,7 +1,1 @@
-"""Generate a PySpark script to load and process JSON data."""
-    schema_file_path = config['pyspark_schema_path']
-    output_file_path = config['pyspark_script_output_path']
-    schema_module = Path(schema_file_path).stem
 
-    # Generate schema file
-    generate_schema_file(schema, schema_file_path)
