@@ -1,9 +1,9 @@
 def extract_column_paths(schema, parent_path=""):
     """
-    Recursively extract column paths from a DataFrame schema, including paths for non-struct elements within arrays.
+    Recursively extract column paths from a DataFrame schema, focusing on providing valid paths for DataFrame operations.
     :param schema: StructType, the schema of the DataFrame.
     :param parent_path: str, the path prefix for nested structures.
-    :return: list of full column paths.
+    :return: list of full column paths without using '*' for arrays.
     """
     column_paths = []
     for field in schema.fields:
@@ -13,10 +13,10 @@ def extract_column_paths(schema, parent_path=""):
         elif isinstance(field.dataType, ArrayType):
             # Check if the array's elementType is a StructType to recurse
             if isinstance(field.dataType.elementType, StructType):
-                column_paths += extract_column_paths(field.dataType.elementType, f"{current_path}.*")
+                column_paths += extract_column_paths(field.dataType.elementType, current_path)
             else:
-                # Directly add the path for arrays of simple types
-                column_paths.append(f"{current_path}.*")
+                # Only provide the path to the array, not into the elements
+                column_paths.append(current_path)
         else:
             column_paths.append(current_path)
     return column_paths
