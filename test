@@ -2,50 +2,34 @@ from pyspark.sql.functions import col, explode_outer
 
 def flatten(df):
     """
-    Recursively flattens a DataFrame by expanding nested structures and arrays into top-level columns,
-    maintaining the original dot-separated column names. It ensures all fields are processed.
+    Flatten a DataFrame by expanding nested structures and arrays into top-level columns,
+    while maintaining the original dot-separated column names.
     """
-    # Initialize a set to track processed fields
-    processed_fields = set()
+    # Track fields to be processed with their original paths
+    complex_fields = dict([(field.name, field.dataType)
+                           for field in df.schema.fields
+                           if isinstance(field.dataType, (ArrayType, StructType))])
     
-    # Function to process complex fields
-    def process_complex_fields(df, complex_fields):
+    while complex_fields:
+        # Process one complex field at a time
         for col_name, data_type in complex_fields.items():
-            if col_name in processed_fields:
-                continue  # Skip if already processed
-            
+            # Flatten StructType fields
             if isinstance(data_type, StructType):
-                # Expand struct fields directly
-                for field in data_type.fields:
-                    full_field_name = f"{col_name}.{field.name}"
-                    if full_field_name not in processed_fields:
-                        df = df.withColumn(full_field_name, col(f"{col_name}.{field.name}"))
-                        processed_fields.add(full_field_name)
-                        
-            elif isinstance(data_type, ArrayType) and isinstance(data_type.elementType, StructType):
-                # Explode arrays of structs and then expand their fields
+                expanded = [col(f"{col_name}.{field.name}").alias(f"{col_name}.{field.name}")
+                            for field in data_type.fields]
+                df = df.select("*", *expanded).drop(col_name)
+
+            # Explode and flatten ArrayType fields that contain StructType
+            elif isinstance(data_type, ArrayType) and isinstance(data_data.elementType, StructType):
                 df = df.withColumn(col_name, explode_outer(col(col_name)))
-                for field in data_type.elementType.fields:
-                    full_field_name = f"{col_name}.{field.name}"
-                    if full_field_name not in processed_fields:
-                        df = df.withColumn(full_field_name, col(full_field_name))
-                        processed_fields.add(full_field_name)
+                expanded = [col(f"{col_name}.{field.name}").alias(f"{col_name}.{field.name}")
+                            for field in data_type.elementType.fields]
+                df = df.select("*", *expanded)
 
-            # Mark this complex field as processed
-            processed_fields.add(col_name)
-        
-        return df
-
-    # Continuously identify and process complex fields until no more are found
-    while True:
+        # Refresh complex_fields to catch any new structs or arrays made accessible by previous operations
         complex_fields = dict([(field.name, field.dataType)
                                for field in df.schema.fields
-                               if (isinstance(field.dataType, (ArrayType, StructType)) and
-                                   field.name not in processed_fields)])
-        
-        if not complex_fields:
-            break
-        
-        df = process_complex_fields(df, complex_fields)
+                               if isinstance(field.dataType, (ArrayType, StructType))
+                               and f"{field.name}" not in complex_fields])
 
     return df
