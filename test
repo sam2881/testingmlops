@@ -3,33 +3,23 @@ from pyspark.sql.functions import col, explode_outer
 def flatten(df):
     """
     Flattens a DataFrame by expanding nested structures and arrays into top-level columns,
-    maintaining the original dot-separated column names.
+    while maintaining the original dot-separated column names. Avoids immediate drops to potentially improve performance.
     """
-    # Identify complex fields within the DataFrame schema
     complex_fields = [(field.name, field.dataType) for field in df.schema.fields
                       if isinstance(field.dataType, (ArrayType, StructType))]
 
-    # Iterate until no complex fields are left
     while complex_fields:
-        col_name, data_type = complex_fields.pop(0)  # Extract one complex field
-
+        col_name, data_type = complex_fields.pop(0)
         if isinstance(data_type, StructType):
-            # Expand struct fields directly without changing their names
+            # Expand struct fields directly
             for field in data_type.fields:
-                new_col_name = f"{col_name}.{field.name}"
-                df = df.withColumn(new_col_name, col(new_col_name))
-            df = df.drop(col_name)  # Drop the original struct column after expansion
-
-        elif isinstance(data_type, ArrayType) and isinstance(data_type.elementType, StructType):
-            # Explode arrays of structs and keep the struct field names
+                df = df.withColumn(f"{col_name}.{field.name}", col(f"{col_name}.{field.name}"))
+        
+        elif isinstance(data_type, ArrayType) and isinstance(data_data.elementType, StructType):
+            # Handle arrays by exploding them and expanding their fields
             df = df.withColumn(col_name, explode_outer(col(col_name)))
-            for field in data_type.elementType.fields:
-                new_col_name = f"{col_name}.{field.name}"
-                df = df.withColumn(new_col_name, col(new_col_name))
-            df = df.drop(col_name)  # Optionally drop the exploded array column
+            for field in data_data.elementType.fields:
+                df = df.withColumn(f"{col_name}.{field.name}", col(f"{col_name}.{field.name}"))
 
-        # Update the list of complex fields as the schema may change
-        complex_fields = [(field.name, field.dataType) for field in df.schema.fields
-                          if isinstance(field.dataType, (ArrayType, StructType))]
-
+    # Consider dropping columns after all transformations if necessary
     return df
