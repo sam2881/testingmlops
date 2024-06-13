@@ -1,39 +1,126 @@
+import json
+import re
+from pathlib import Path
+from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, explode_outer
+from pyspark.sql.types import *
 
-def flatten_df(df):
-    """
-    Iteratively flatten a DataFrame with nested structures or arrays,
-    maintaining column names and paths.
-    """
-    # Queue to manage columns to process
-    queue = []
-    # Initialize queue with root level columns
-    for field in df.schema.fields:
-        queue.append((field.dataType, field.name))
-    
-    # Process queue
-    while queue:
-        dtype, path = queue.pop(0)
-        
-        if isinstance(dtype, StructType):
-            # Enqueue nested StructType fields
-            for field in dtype.fields:
-                new_path = f"{path}.{field.name}"
-                queue.append((field.dataType, new_path))
-        elif isinstance(dtype, ArrayType) and isinstance(dtype.elementType, StructType):
-            # Explode arrays of StructType and enqueue fields
-            df = df.withColumn(path, explode_outer(col(path)))
-            for field in dtype.elementType.fields:
-                new_path = f"{path}.{field.name}"
-                queue.append((field.dataType, new_path))
+def read_json_file(file_path):
+    """Read and return the JSON schema from a file."""
+    with open(file_path, 'r') as file:
+        return json.load(file)
+
+def resolve_reference(ref, definitions):
+    """Resolve $ref to actual defined schema, handling nested references."""
+    if isinstance(ref, dict) and '$ref' in ref:
+        ref_key = ref['$ref'].replace('#/definitions/', '')
+        return resolve_reference(definitions.get(ref_key, {}), definitions)
+    return ref
+
+def convert_to_spark_schema(json_schema, definitions):
+    """Convert JSON schema to PySpark schema, handling types and references."""
+    if isinstance(json_schema, dict):
+        if 'type' not in json_schema:
+            if '$ref' in json_schema:
+                return convert_to_spark_schema(resolve_reference(json_schema['$ref'], definitions), definitions)
+            return None  # Safe exit if unable to resolve schema
+
+        data_type = json_schema['type']
+        if data_type == 'object':
+            fields = [StructField(field, convert_to_spark_schema(prop, definitions), True)
+                      for field, prop in json_schema.get('properties', {}).items() if convert_to_spark_schema(prop, definitions)]
+            return StructType(fields)
+        elif data_type == 'array':
+            element_schema = json_schema.get('items', {})
+            spark_element_schema = convert_to_spark_schema(resolve_reference(element_schema, definitions), definitions)
+            return ArrayType(spark_element_schema, True) if spark_element_schema else None
         else:
-            # Simple types are directly included in the DataFrame's select expression
-            df = df.withColumn(path, col(path))
-    
-    # Generate select expression to rename paths to column-friendly names
-    select_expr = [col(path).alias(path.replace('.', '_')) for _, path in queue]
+            return StringType()  # Default for unspecified complex types
+    elif isinstance(json_schema, list):
+        return convert_to_spark_schema(json_schema[0], definitions) if json_schema else None
+    return None  # Return None for any non-dictionary or empty input
+
+def camel_to_snake(name):
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+def flatten(df):
+    """Flatten complex structures in a DataFrame, maintaining full path names without underscores."""
+    complex_fields = dict([(field.name, field.dataType)
+                           for field in df.schema.fields
+                           if isinstance(field.dataType, (ArrayType, StructType))])
+    while complex_fields:
+        col_name = list(complex_fields.keys())[0]
+        if isinstance(complex_fields[col_name], StructType):
+            expanded = [col(f"{col_name}.{field.name}").alias(f"{col_name}.{field.name}") for field in complex_fields[col_name]]
+            df = df.select("*", *expanded).drop(col_name)
+        elif isinstance(complex_fields[col_name], ArrayType):
+            df = df.withColumn(col_name, explode_outer(col_name))
+        complex_fields = dict([(field.name, field.dataType)
+                               for field in df.schema.fields
+                               if isinstance(field.dataType, (ArrayType, StructType))])
+    return df
+
+def generate_select_expression(df):
+    """Generate a DataFrame select expression with properly aliased columns."""
+    seen_aliases = set()
+    select_expr = []
+    for col_name in df.columns:
+        snake_case_name = camel_to_snake(col_name.split('.')[-1])
+        original_snake_case_name = snake_case_name
+        count = 1
+        while snake_case_name in seen_aliases:
+            snake_case_name = f"{original_snake_case_name}_{count}"
+            count += 1
+        seen_aliases.add(snake_case_name)
+        select_expr.append(col(col_name).alias(snake_case_name))
     return df.select(*select_expr)
 
-# Usage
-df_flattened = flatten_df(df)
-df_flattened.printSchema()
+def generate_pyspark_script(schema, output_file_path, schema_file_path):
+    """Generate a PySpark script to load and process JSON data, including dynamic flattening."""
+    if schema is None:
+        raise ValueError("The schema is None, cannot generate PySpark script.")
+
+    schema_json = json.dumps(schema.jsonValue(), indent=4)
+    schema_json = schema_json.replace('true', 'True').replace('false', 'False')
+
+    with open(schema_file_path, 'w') as schema_file:
+        schema_file.write(f"""
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, TimestampType, ArrayType, MapType, BooleanType, LongType, DoubleType
+
+def get_schema():
+    return StructType.fromJson({schema_json})
+""")
+
+    pyspark_code = f"""
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, explode_outer
+from pyspark.sql.types import *
+import {Path(schema_file_path).stem} as schema_module
+
+spark = SparkSession.builder.appName("JsonToDataFrame").getOrCreate()
+schema = schema_module.get_schema()
+df = spark.read.schema(schema).json("input_data.json")
+
+df_flattened = flatten(df)
+final_df = generate_select_expression(df_flattened)
+
+final_df.show(truncate=False)
+"""
+
+    with open(output_file_path, 'w') as file:
+        file.write(pyspark_code)
+
+def main():
+    """Main function to execute the script. Reads configuration, processes JSON data, and generates a schema and a PySpark script."""
+    base_directory = Path(__file__).parent
+    schema_path = base_directory / 'json_schema.json'
+    pyspark_script_path = base_directory / 'generated_pyspark_script.py'
+    pyspark_schema_path = base_directory / 'pyspark_schema.py'
+
+    schema_dict = read_json_file(schema_path)
+    spark_schema = convert_to_spark_schema(schema_dict, {})
+    generate_pyspark_script(spark_schema, pyspark_script_path, pyspark_schema_path)
+
+if __name__ == "__main__":
+    main()
