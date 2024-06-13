@@ -1,26 +1,22 @@
-def generate_select_expression(df):
-    """Generate a DataFrame select expression with properly aliased columns, using column names."""
-    seen_aliases = {}
-    select_expr = []
-
-    for col_name in df.columns:
-        parts = col_name.split('.')
-        simple_name = parts[-1]  # Get the last part of the name
-        snake_case_name = camel_to_snake(simple_name)  # Convert it to snake_case
-
-        # Check for duplicates and prepend parent name if necessary
-        if snake_case_name in seen_aliases:
-            parent_name = camel_to_snake(parts[-2]) if len(parts) > 1 else None
-            if parent_name:
-                snake_case_name = parent_name + '_' + snake_case_name
+def extract_column_paths(schema, parent_path=""):
+    """
+    Recursively extract column paths from a DataFrame schema, including paths for non-struct elements within arrays.
+    :param schema: StructType, the schema of the DataFrame.
+    :param parent_path: str, the path prefix for nested structures.
+    :return: list of full column paths.
+    """
+    column_paths = []
+    for field in schema.fields:
+        current_path = f"{parent_path}.{field.name}" if parent_path else field.name
+        if isinstance(field.dataType, StructType):
+            column_paths += extract_column_paths(field.dataType, current_path)
+        elif isinstance(field.dataType, ArrayType):
+            # Check if the array's elementType is a StructType to recurse
+            if isinstance(field.dataType.elementType, StructType):
+                column_paths += extract_column_paths(field.dataType.elementType, f"{current_path}.*")
             else:
-                # Append a numeric suffix if no parent exists (unlikely, but just in case)
-                count = seen_aliases[snake_case_name] + 1
-                snake_case_name = f"{snake_case_name}_{count}"
-                seen_aliases[snake_case_name] = count
+                # Directly add the path for arrays of simple types
+                column_paths.append(f"{current_path}.*")
         else:
-            seen_aliases[snake_case_name] = 0
-
-        select_expr.append(col(".".join(parts)).alias(snake_case_name))
-
-    return df.select(*select_expr)
+            column_paths.append(current_path)
+    return column_paths
