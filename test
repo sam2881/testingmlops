@@ -1,27 +1,20 @@
-def generate_select_expression_from_list(column_names):
-    """Generate a DataFrame select expression with properly aliased columns from a list of column names."""
-    seen_aliases = {}
-    select_expr = []
-
-    for col_name in column_names:
-        parts = col_name.split('.')
-        simple_name = parts[-1]  # Get the last part of the name
-        snake_case_name = camel_to_snake(simple_name)  # Convert it to snake_case
-
-        # Check for duplicates and prepend parent name if necessary
-        if snake_case_name in seen_aliases:
-            parent_name = camel_to_snake(parts[-2]) if len(parts) > 1 else None
-            if parent_name:
-                snake_case_name = parent_name + '_' + snake_case_name
-            else:
-                # Append a numeric suffix if no parent exists (unlikely, but just in case)
-                count = seen_aliases[snake_case_name] + 1
-                snake_case_name = f"{snake_case_name}_{count}"
-                seen_aliases[snake_case_name] = count
+def extract_column_paths(schema, parent_path=""):
+    """
+    Recursively extract column paths from a DataFrame schema.
+    :param schema: StructType, the schema of the DataFrame.
+    :param parent_path: str, the path prefix for nested structures.
+    :return: list of full column paths.
+    """
+    column_paths = []
+    for field in schema.fields:
+        current_path = f"{parent_path}.{field.name}" if parent_path else field.name
+        if isinstance(field.dataType, StructType):
+            # Recursively call for StructType
+            column_paths += extract_column_paths(field.dataType, current_path)
+        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
+            # Handle arrays of structs, assuming one level of nesting for simplicity
+            column_paths += extract_column_paths(field.dataType.elementType, current_path)
         else:
-            seen_aliases[snake_case_name] = 0
-
-        select_expr.append(f"col('{col_name}').alias('{snake_case_name}')")
-
-    # Join all the select expressions to simulate a DataFrame select method
-    return ",\n".join(select_expr)
+            # Add the current path to the list
+            column_paths.append(current_path)
+    return column_paths
