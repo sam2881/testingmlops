@@ -1,22 +1,29 @@
 def extract_column_paths(schema, parent_path=""):
     """
-    Recursively extract column paths from a DataFrame schema, focusing on providing valid paths for DataFrame operations.
+    Recursively extract column paths from a DataFrame schema, incorporating handling for arrays and nested structures.
+    This version aims to provide paths that are usable for DataFrame API operations directly, without expansion of arrays.
     :param schema: StructType, the schema of the DataFrame.
     :param parent_path: str, the path prefix for nested structures.
-    :return: list of full column paths without using '*' for arrays.
+    :return: list of full column paths suitable for DataFrame operations.
     """
     column_paths = []
     for field in schema.fields:
         current_path = f"{parent_path}.{field.name}" if parent_path else field.name
         if isinstance(field.dataType, StructType):
+            # Recurse for StructType, continuing to build the path
             column_paths += extract_column_paths(field.dataType, current_path)
         elif isinstance(field.dataType, ArrayType):
-            # Check if the array's elementType is a StructType to recurse
+            # For Arrays, check if the element type is StructType to recurse
             if isinstance(field.dataType.elementType, StructType):
-                column_paths += extract_column_paths(field.dataType.elementType, current_path)
+                # Recurse into StructType within the array
+                nested_paths = extract_column_paths(field.dataType.elementType, current_path)
+                # Here, append the path to the array itself, plus expanded paths
+                column_paths.append(current_path)
+                column_paths += nested_paths
             else:
-                # Only provide the path to the array, not into the elements
+                # Just append the path to the array if it's not a StructType
                 column_paths.append(current_path)
         else:
+            # For simple types, just add the current path
             column_paths.append(current_path)
     return column_paths
