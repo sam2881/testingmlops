@@ -1,29 +1,23 @@
-def extract_column_paths(schema, parent_path=""):
+def flatten(df, prefix=""):
     """
-    Recursively extract column paths from a DataFrame schema, incorporating handling for arrays and nested structures.
-    This version aims to provide paths that are usable for DataFrame API operations directly, without expansion of arrays.
-    :param schema: StructType, the schema of the DataFrame.
-    :param parent_path: str, the path prefix for nested structures.
-    :return: list of full column paths suitable for DataFrame operations.
+    Flattens the DataFrame and renames columns to keep track of original paths.
     """
-    column_paths = []
-    for field in schema.fields:
-        current_path = f"{parent_path}.{field.name}" if parent_path else field.name
-        if isinstance(field.dataType, StructType):
-            # Recurse for StructType, continuing to build the path
-            column_paths += extract_column_paths(field.dataType, current_path)
-        elif isinstance(field.dataType, ArrayType):
-            # For Arrays, check if the element type is StructType to recurse
-            if isinstance(field.dataType.elementType, StructType):
-                # Recurse into StructType within the array
-                nested_paths = extract_column_paths(field.dataType.elementType, current_path)
-                # Here, append the path to the array itself, plus expanded paths
-                column_paths.append(current_path)
-                column_paths += nested_paths
-            else:
-                # Just append the path to the array if it's not a StructType
-                column_paths.append(current_path)
-        else:
-            # For simple types, just add the current path
-            column_paths.append(current_path)
-    return column_paths
+    complex_fields = [f.name for f in df.schema.fields if isinstance(f.dataType, (ArrayType, StructType))]
+    while complex_fields:
+        col_name = complex_fields.pop(0)
+        new_prefix = f"{prefix}{col_name}_" if prefix else f"{col_name}_"
+
+        if isinstance(df.schema[col_name].dataType, StructType):
+            for field in df.schema[col_name].dataType.fields:
+                df = df.withColumn(f"{new_prefix}{field.name}", col(f"{col_name}.{field.name}"))
+            df = df.drop(col_name)
+        elif isinstance(df.schema[col_name].dataType, ArrayType) and isinstance(df.schema[col_name].dataType.elementType, StructType):
+            df = df.withColumn(col_name, explode_outer(col(col_name)))
+            for field in df.schema[col_name].dataType.elementType.fields:
+                df = df.withColumn(f"{new_prefix}{field.name}", col(f"{col_name}.{field.name}"))
+            df = df.drop(col_name)
+        complex_fields = [f.name for f in df.schema.fields if isinstance(f.dataType, (ArrayType, StructType))]
+
+    return df
+flattened_df = flatten(df)
+actual_column_paths = flattened_df.columns
