@@ -1,49 +1,63 @@
-def generate_pyspark_script(config, schema):
-    schema_json = json.dumps(schema.jsonValue(), indent=4)
-    schema_json = schema_json.replace('true', 'True').replace('false', 'False')
-    schema_file_path = config['pyspark_schema_path']
-    output_file_path = config['pyspark_script_output_path']
-    schema_file_stem = Path(schema_file_path).stem
-
-    with open(schema_file_path, 'w') as schema_file:
-        schema_file.write(f"""
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, TimestampType, ArrayType, MapType, BooleanType, LongType, DoubleType
+import json
+import yaml
+from pathlib import Path
+from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, explode_outer
 
-def get_schema():
-    return StructType.fromJson({schema_json})
-""")
-
-    pyspark_code = f"""
-from pyspark.sql import SparkSession
-from {schema_file_stem} import get_schema
-
-spark = SparkSession.builder.appName("JsonToDataFrame").getOrCreate()
-df = spark.read.schema(get_schema()).json("{config['json_data_input_path']}")
-
-df_flattened = flatten(df)
-
-# Select and alias columns as required
-select_statement = df_flattened.select(
-    {generate_select_expression(df_flattened)}
-)
-
-# Show the results
-select_statement.show(truncate=False)
-"""
-
-    with open(output_file_path, 'w') as file:
-        file.write(pyspark_code)
+# Include your functions for handling schema conversion and flattening here
 
 def main():
-    config_path = 'config.yaml'
+    """
+    Main function to execute the script. Reads configuration, processes JSON data, and generates a schema and a PySpark script.
+    """
+    base_directory = Path(__file__).resolve().parent.parent
+    config_path = base_directory / 'config.yaml'
+
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)
 
-    json_schema = read_json_file(config['json_schema_path'])
-    definitions = json_schema.get('definitions', {})
-    pyspark_schema = convert_to_spark_schema(json_schema, definitions)
-    generate_pyspark_script(config, pyspark_schema)
+    pyspark_schema_path = base_directory / config['pyspark_schema_path']
+    pyspark_script_output_path = base_directory / config['pyspark_script_output_path']
+    json_data_input_path = base_directory / config['json_data_input_path']
+
+    # Load and process the schema
+    pyspark_schema = generate_pyspark_schema(read_json_file(pyspark_schema_path))
+
+    # Initialize Spark Session
+    spark = SparkSession.builder.appName("JsonToDataFrame").getOrCreate()
+
+    # Load JSON data according to the schema
+    df = spark.read.schema(pyspark_schema).json(str(json_data_input_path))
+
+    # Flatten the DataFrame
+    df_flattened = flatten(df)
+
+    # Generate select expressions
+    select_expressions = generate_select_expression(df_flattened)
+
+    # Prepare the PySpark script content
+    pyspark_code = f"""
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col
+from pyspark.sql.types import *
+from pyspark.sql.functions import *
+
+# Schema import line can be adjusted or removed if schema is defined directly in the script
+spark = SparkSession.builder.appName("JsonToDataFrame").getOrCreate()
+df = spark.read.schema(schema).json("input_data.json")
+
+df_flattened = df.select(
+    *{select_expressions}
+)
+
+df_flattened.show(truncate=False)
+"""
+
+    # Write the PySpark script to a file
+    with open(pyspark_script_output_path, 'w') as file:
+        file.write(pyspark_code)
+
+    print(f"Generated PySpark script at {pyspark_script_output_path}")
 
 if __name__ == "__main__":
     main()
