@@ -3,30 +3,32 @@ from pyspark.sql.functions import col, explode_outer
 def flatten(df):
     """
     Flattens a DataFrame by expanding nested structures and arrays into top-level columns,
-    without changing the original column names.
+    maintaining the original dot-separated column names.
     """
-    # Track the DataFrame's complex fields (arrays or structs)
+    # Identify complex fields within the DataFrame schema
     complex_fields = [(field.name, field.dataType) for field in df.schema.fields
                       if isinstance(field.dataType, (ArrayType, StructType))]
 
-    # Process each complex field
+    # Iterate until no complex fields are left
     while complex_fields:
-        col_name, data_type = complex_fields.pop(0)  # Get one complex field
+        col_name, data_type = complex_fields.pop(0)  # Extract one complex field
 
         if isinstance(data_type, StructType):
-            # Expand struct fields into columns at the current DataFrame level
+            # Expand struct fields directly without changing their names
             for field in data_type.fields:
-                df = df.withColumn(f"{col_name}.{field.name}", col(f"{col_name}.{field.name}"))
+                new_col_name = f"{col_name}.{field.name}"
+                df = df.withColumn(new_col_name, col(new_col_name))
             df = df.drop(col_name)  # Drop the original struct column after expansion
 
         elif isinstance(data_type, ArrayType) and isinstance(data_type.elementType, StructType):
-            # Explode arrays of structs and expand their fields into columns
+            # Explode arrays of structs and keep the struct field names
             df = df.withColumn(col_name, explode_outer(col(col_name)))
             for field in data_type.elementType.fields:
-                df = df.withColumn(f"{col_name}.{field.name}", col(f"{col_name}.{field.name}"))
-            df = df.drop(col_name)  # Drop the original array column after processing
+                new_col_name = f"{col_name}.{field.name}"
+                df = df.withColumn(new_col_name, col(new_col_name))
+            df = df.drop(col_name)  # Optionally drop the exploded array column
 
-        # Update the list of complex fields as the schema may have changed
+        # Update the list of complex fields as the schema may change
         complex_fields = [(field.name, field.dataType) for field in df.schema.fields
                           if isinstance(field.dataType, (ArrayType, StructType))]
 
