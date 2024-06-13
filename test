@@ -1,20 +1,30 @@
-def extract_column_paths(schema, parent_path=""):
+def generate_select_expression_from_list(df, column_paths):
     """
-    Recursively extract column paths from a DataFrame schema.
-    :param schema: StructType, the schema of the DataFrame.
-    :param parent_path: str, the path prefix for nested structures.
-    :return: list of full column paths.
+    Generate a DataFrame select expression with properly aliased columns from a list.
+    :param df: DataFrame, the DataFrame to apply the select expression.
+    :param column_paths: list, a list of column paths.
+    :return: DataFrame, with columns selected and aliased based on the last segment and handling duplicates.
     """
-    column_paths = []
-    for field in schema.fields:
-        current_path = f"{parent_path}.{field.name}" if parent_path else field.name
-        if isinstance(field.dataType, StructType):
-            # Recursively call for StructType
-            column_paths += extract_column_paths(field.dataType, current_path)
-        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            # Handle arrays of structs, assuming one level of nesting for simplicity
-            column_paths += extract_column_paths(field.dataType.elementType, current_path)
-        else:
-            # Add the current path to the list
-            column_paths.append(current_path)
-    return column_paths
+    seen_aliases = set()
+    select_expr = []
+
+    for col_path in column_paths:
+        parts = col_path.split('.')
+        # Only consider the last part of the path for the alias
+        original_name = parts[-1]
+        snake_case_name = camel_to_snake(original_name)
+        
+        # Check for duplicates and modify alias if necessary
+        if snake_case_name in seen_aliases:
+            # Add parent name if duplicate
+            parent_part = camel_to_snake(parts[-2]) if len(parts) > 1 else 'base'
+            snake_case_name = f"{parent_part}_{snake_case_name}"
+        
+        # Check again if the modified name is still a duplicate
+        while snake_case_name in seen_aliases:
+            snake_case_name += '_x'  # Append '_x' to make it unique if still a duplicate
+
+        seen_aliases.add(snake_case_name)
+        select_expr.append(col(".".join(parts)).alias(snake_case_name))
+
+    return df.select(*select_expr)
