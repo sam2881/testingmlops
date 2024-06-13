@@ -1,29 +1,37 @@
 from pyspark.sql.functions import col, explode_outer
 
-def flatten_df(df, alias_dict={}, parent_prefix=""):
+def flatten_df(df):
     """
-    Flatten the DataFrame schema by expanding nested structures and arrays.
-    Maintains a dictionary of aliases to ensure columns are uniquely and consistently named.
+    Iteratively flatten a DataFrame with nested structures or arrays,
+    maintaining column names and paths.
     """
+    # Queue to manage columns to process
+    queue = []
+    # Initialize queue with root level columns
     for field in df.schema.fields:
-        name = field.name
-        dtype = field.dataType
+        queue.append((field.dataType, field.name))
+    
+    # Process queue
+    while queue:
+        dtype, path = queue.pop(0)
+        
         if isinstance(dtype, StructType):
-            # For Struct fields, recurse and flatten further
-            df = flatten_df(df, alias_dict, f"{parent_prefix}{name}.")
+            # Enqueue nested StructType fields
+            for field in dtype.fields:
+                new_path = f"{path}.{field.name}"
+                queue.append((field.dataType, new_path))
         elif isinstance(dtype, ArrayType) and isinstance(dtype.elementType, StructType):
-            # For ArrayType(StructType) fields, explode and then flatten
-            path = f"{parent_prefix}{name}"
-            df = df.withColumn(name, explode_outer(col(path)))
-            df = flatten_df(df, alias_dict, path + ".")
+            # Explode arrays of StructType and enqueue fields
+            df = df.withColumn(path, explode_outer(col(path)))
+            for field in dtype.elementType.fields:
+                new_path = f"{path}.{field.name}"
+                queue.append((field.dataType, new_path))
         else:
-            # Add field to alias dictionary
-            final_path = f"{parent_prefix}{name}"
-            if final_path not in alias_dict:
-                alias_dict[final_path] = name  # Keep track of original paths to names
-
-    # Select columns using aliases to maintain flat structure
-    select_expr = [col(key).alias(alias_dict[key].replace('.', '_')) for key in alias_dict]
+            # Simple types are directly included in the DataFrame's select expression
+            df = df.withColumn(path, col(path))
+    
+    # Generate select expression to rename paths to column-friendly names
+    select_expr = [col(path).alias(path.replace('.', '_')) for _, path in queue]
     return df.select(*select_expr)
 
 # Usage
