@@ -1,70 +1,16 @@
-def determine_explode_paths(schema, parent_path=""):
-    """Recursively determine paths that need exploding."""
-    explode_paths = []
-    for field in schema.fields:
-        current_path = f"{parent_path}.{field.name}" if parent_path else field.name
-        if isinstance(field.dataType, ArrayType) and not isinstance(field.dataType.elementType, ArrayType):
-            explode_paths.append(current_path)
-        elif isinstance(field.dataType, StructType):
-            explode_paths.extend(determine_explode_paths(field.dataType, current_path))
-    return explode_paths
-
-def apply_transformations(df, schema):
-    """Explode necessary columns and prepare for selection."""
-    explode_paths = determine_explode_paths(schema)
-    for path in explode_paths:
-        exploded_column = path.split('.')[-1] + "_exploded"
-        df = df.withColumn(exploded_column, explode_outer(path))
-    return df, explode_paths
-
-def generate_select_expressions(df, schema, exploded_paths):
+def generate_select_expressions(schema):
     """Generate select expressions taking into account exploded fields."""
     select_expr = []
+    exploded_paths = determine_explode_paths(schema)
     column_paths = extract_column_paths(schema)
+
     for path in column_paths:
         if path in exploded_paths:
             new_col_name = path.split('.')[-1] + "_exploded"
             snake_case_name = camel_to_snake(new_col_name)
-            select_expr.append(col(new_col_name).alias(snake_case_name))
+            select_expr.append(f"col('{new_col_name}').alias('{snake_case_name}')")
         else:
             snake_case_name = camel_to_snake(path.split('.')[-1])
-            select_expr.append(col(path).alias(snake_case_name))
-    return df.select(*select_expr)
-
-def generate_pyspark_script(config, schema):
-    schema_file_path = config['pyspark_schema_path']
-    output_file_path = config['pyspark_script_output_path']
-    schema_module = Path(schema_file_path).stem
-
-    generate_schema_file(schema, schema_file_path)
-
-    pyspark_code = f"""
-from pyspark.sql import SparkSession
-from {schema_module} import get_schema
-from pyspark.sql.functions import col, explode_outer
-import finale_pyspark_schema as fps
-
-spark = SparkSession.builder.appName("JsonToDataFrame").getOrCreate()
-
-schema = get_schema()
-df = spark.read.schema(schema).option("multiline","true").json("{config['json_data_input_path']}")
-df, exploded_paths = fps.apply_transformations(df, schema)
-select_statement = fps.generate_select_expressions(df, schema, exploded_paths)
-
-select_statement.show(truncate=False)
-"""
-    with open(output_file_path, 'w') as file:
-        file.write(pyspark_code)
-
-def main():
-    config_path = 'config.yaml'
-    with open(config_path, 'r') as file:
-        config = yaml.safe_load(file)
-
-    json_schema = read_json_file(config['json_schema_path'])
-    definitions = json_schema.get('definitions', {})
-    pyspark_schema = convert_to_spark_schema(json_schema, definitions)
-    generate_pyspark_script(config, pyspark_schema)
-
-if __name__ == "__main__":
-    main()
+            select_expr.append(f"col('{path}').alias('{snake_case_name}')")
+    
+    return ",\n    ".join(select_expr), exploded_paths
