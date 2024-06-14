@@ -1,39 +1,128 @@
-def generate_pyspark_script(config, schema):
+import json
+import re
+import yaml
+from pathlib import Path
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, explode_outer
+from pyspark.sql.types import *
+
+def read_json_file(file_path):
+    """Read and return the JSON schema from a file."""
+    with open(file_path, 'r') as file:
+        return json.load(file)
+
+def resolve_reference(ref, definitions):
+    """Resolve $ref to actual defined schema, handling nested references."""
+    if isinstance(ref, dict) and '$ref' in ref:
+        ref_key = ref['$ref'].replace('#/definitions/', '')
+        return resolve_reference(definitions.get(ref_key, {}), definitions)
+    return ref
+
+def convert_to_spark_schema(json_schema, definitions):
+    """Convert JSON schema to PySpark schema, handling types and references."""
+    if isinstance(json_schema, dict):
+        if 'type' not in json_schema and '$ref' in json_schema:
+            return convert_to_spark_schema(resolve_reference(json_schema, definitions), definitions)
+        if 'type' in json_schema:
+            data_type = json_schema['type']
+            if data_type == 'object':
+                fields = [StructField(field, convert_to_spark_schema(prop, definitions), True)
+                          for field, prop in json_schema.get('properties', {}).items() if convert_to_spark_schema(prop, definitions)]
+                return StructType(fields)
+            elif data_type == 'array':
+                element_schema = json_schema.get('items', {})
+                return ArrayType(convert_to_spark_schema(element_schema, definitions), True)
+            elif data_type == 'string':
+                return StringType()
+            elif data_type == 'integer':
+                return IntegerType()
+            elif data_type == 'boolean':
+                return BooleanType()
+            elif data_type == 'number':
+                return DoubleType()
+            else:
+                return StringType()
+    elif isinstance(json_schema, list):
+        return convert_to_spark_schema(json_schema[0], definitions)
+    return None
+
+def generate_schema_file(schema, schema_file_path):
+    """Generate a Python file that contains the schema definition."""
+    schema_code = f"from pyspark.sql.types import StructType\n\n"
+    schema_code += f"def get_schema():\n"
+    schema_code += f"    return StructType.fromJson({json.dumps(schema.jsonValue(), indent=4)})\n"
+    with open(schema_file_path, 'w') as file:
+        file.write(schema_code)
+
+def camel_to_snake(name):
+    """Convert camelCase string to snake_case string."""
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+
+def extract_column_paths(schema, parent_path=""):
+    """Extract column paths suitable for DataFrame operations where actual data is stored."""
+    column_paths = []
+    for field in schema.fields:
+        current_path = f"{parent_path}.{field.name}" if parent_path else field.name
+        if isinstance(field.dataType, StructType):
+            nested_paths = extract_column_paths(field.dataType, current_path)
+            column_paths.extend(nested_paths)
+        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
+            nested_paths = extract_column_paths(field.dataType.elementType, current_path)
+            column_paths.extend(nested_paths)
+        else:
+            column_paths.append(current_path)
+    return column_paths
+
+def determine_explode_paths(column_paths):
+    """Determine which column paths need exploding based on the presence of arrays."""
+    return [path for path in column_paths if "Array" in str(path)]
+def generate_pyspark_script(config, schema, explode_paths):
+    """Generate a PySpark script to load and process JSON data."""
     schema_file_path = config['pyspark_schema_path']
     output_file_path = config['pyspark_script_output_path']
     schema_module = Path(schema_file_path).stem
 
     # Generate schema file
     generate_schema_file(schema, schema_file_path)
-
-    # Extract column paths and determine paths that need explosion
     list_col = extract_column_paths(schema)
-    explode_paths = determine_explode_paths(list_col)  # Ensure this function is defined to find paths needing explosion
+    explode_code = '\n'.join([f'df = df.withColumn("{path.split(".")[-1]}_exploded", explode_outer("{path}"))' for path in explode_paths])
+    select_expressions = generate_select_expression_from_list([f"{path}_exploded" for path in explode_paths])
 
-    # Create the PySpark script
+    # Generate the PySpark script
     pyspark_code = f"""
 from pyspark.sql import SparkSession
 from {schema_module} import get_schema
 from pyspark.sql.functions import col, explode_outer
+from finale_pyspark_schema import extract_column_paths, generate_select_expression_from_list, read_json_file
 
 spark = SparkSession.builder.appName("JsonToDataFrame").getOrCreate()
-schema = get_schema()
-df = spark.read.schema(schema).option("multiline", "true").json("{config['json_data_input_path']}")
 
-# Exploding necessary arrays
-"""
-    # Adding explosion code dynamically
-    for path in explode_paths:
-        pyspark_code += f'df = df.withColumn("{path.split(".")[-1]}_exploded", explode_outer("{path}"))\n'
+df = spark.read.schema(get_schema()).option("multiline","true").json("{config['json_data_input_path']}")
 
-    # Adding selection expressions
-    pyspark_code += f"""
-# Generate select expressions
-select_expressions = generate_select_expression_from_list([f"{path}_exploded" for path in explode_paths])
+{explode_code}
 
-# Select and alias columns as required
-select_statement = df.select(*select_expressions)
-
-# Show the results
+select_statement = df.select(
+    {select_expressions}
+)
 select_statement.show(truncate=False)
 """
+    with open(output_file_path, 'w') as file:
+        file.write(pyspark_code)
+
+def main():
+    config_path = 'config.yaml'
+    with open(config_path, 'r') as file:
+        config = yaml.safe_load(file)
+
+    json_schema = read_json_file(config['json_schema_path'])
+    definitions = json_schema.get('definitions', {})
+    pyspark_schema = convert_to_spark_schema(json_schema, definitions)
+    explode_paths = determine_explode_paths(extract_column_paths(pyspark_schema))
+
+    generate_pyspark_script(config, pyspark_schema, explode_paths)
+
+if __name__ == "__main__":
+    main()
+
