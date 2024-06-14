@@ -1,39 +1,70 @@
-def generate_select_expression_from_list(column_names):
-    """
-    Generate a DataFrame select expression with properly aliased columns from a list of column names.
-    
-    Args:
-    column_names (list of str): Full column paths from the DataFrame schema.
+def determine_explode_paths(schema, parent_path=""):
+    """Recursively determine paths that need exploding."""
+    explode_paths = []
+    for field in schema.fields:
+        current_path = f"{parent_path}.{field.name}" if parent_path else field.name
+        if isinstance(field.dataType, ArrayType) and not isinstance(field.dataType.elementType, ArrayType):
+            explode_paths.append(current_path)
+        elif isinstance(field.dataType, StructType):
+            explode_paths.extend(determine_explode_paths(field.dataType, current_path))
+    return explode_paths
 
-    Returns:
-    str: A string of select expressions suitable for use in df.select().
-    """
-    seen_aliases = {}
+def apply_transformations(df, schema):
+    """Explode necessary columns and prepare for selection."""
+    explode_paths = determine_explode_paths(schema)
+    for path in explode_paths:
+        exploded_column = path.split('.')[-1] + "_exploded"
+        df = df.withColumn(exploded_column, explode_outer(path))
+    return df, explode_paths
+
+def generate_select_expressions(df, schema, exploded_paths):
+    """Generate select expressions taking into account exploded fields."""
     select_expr = []
-
-    for col_name in column_names:
-        if isinstance(col_name, str):
-            parts = col_name.split('.')
-            simple_name = parts[-1]  # Get the last part of the name
-            snake_case_name = camel_to_snake(simple_name)  # Convert it to snake_case
-
-            # Check for duplicates and prepend parent name if necessary
-            if snake_case_name in seen_aliases:
-                parent_name = camel_to_snake(parts[-2]) if len(parts) > 1 else None
-                if parent_name:
-                    snake_case_name = parent_name + '_' + snake_case_name
-                else:
-                    # If no parent name or first duplication, simply increment the count
-                    count = seen_aliases.get(snake_case_name, 0) + 1
-                    snake_case_name += f"_{count}"
-                    seen_aliases[snake_case_name] = count
-            else:
-                seen_aliases[snake_case_name] = 0
-
-            # Append the formatted column selection string
-            select_expr.append(f"col('{col_name}').alias('{snake_case_name}')")
+    column_paths = extract_column_paths(schema)
+    for path in column_paths:
+        if path in exploded_paths:
+            new_col_name = path.split('.')[-1] + "_exploded"
+            snake_case_name = camel_to_snake(new_col_name)
+            select_expr.append(col(new_col_name).alias(snake_case_name))
         else:
-            raise ValueError("column name is not a string.")
+            snake_case_name = camel_to_snake(path.split('.')[-1])
+            select_expr.append(col(path).alias(snake_case_name))
+    return df.select(*select_expr)
 
-    # Join all the select expressions to simulate a DataFrame select method
-    return ",\n".join(select_expr)
+def generate_pyspark_script(config, schema):
+    schema_file_path = config['pyspark_schema_path']
+    output_file_path = config['pyspark_script_output_path']
+    schema_module = Path(schema_file_path).stem
+
+    generate_schema_file(schema, schema_file_path)
+
+    pyspark_code = f"""
+from pyspark.sql import SparkSession
+from {schema_module} import get_schema
+from pyspark.sql.functions import col, explode_outer
+import finale_pyspark_schema as fps
+
+spark = SparkSession.builder.appName("JsonToDataFrame").getOrCreate()
+
+schema = get_schema()
+df = spark.read.schema(schema).option("multiline","true").json("{config['json_data_input_path']}")
+df, exploded_paths = fps.apply_transformations(df, schema)
+select_statement = fps.generate_select_expressions(df, schema, exploded_paths)
+
+select_statement.show(truncate=False)
+"""
+    with open(output_file_path, 'w') as file:
+        file.write(pyspark_code)
+
+def main():
+    config_path = 'config.yaml'
+    with open(config_path, 'r') as file:
+        config = yaml.safe_load(file)
+
+    json_schema = read_json_file(config['json_schema_path'])
+    definitions = json_schema.get('definitions', {})
+    pyspark_schema = convert_to_spark_schema(json_schema, definitions)
+    generate_pyspark_script(config, pyspark_schema)
+
+if __name__ == "__main__":
+    main()
