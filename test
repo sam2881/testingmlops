@@ -38,12 +38,11 @@ def generate_select_expression_from_list(column_names):
                 parent_name = camel_to_snake(parts[-2]) if len(parts) > 1 else None
                 if parent_name:
                     snake_case_name = f"{parent_name}_{snake_case_name}"
-                else:
-                    count = seen_aliases[snake_case_name] + 1
-                    snake_case_name = f"{snake_case_name}_{count}"
+                count = seen_aliases.get(snake_case_name, 0) + 1
+                snake_case_name = f"{snake_case_name}_{count}"
                 seen_aliases[snake_case_name] = count
             else:
-                seen_aliases[snake_case_name] = 1  # Initialize count
+                seen_aliases[snake_case_name] = 1  # Initialize count as this is the first occurrence
 
             select_expr.append(f"col('{col_name}').alias('{snake_case_name}')")
         else:
