@@ -1,44 +1,62 @@
-def extract_column_paths(schema, parent_path=""):
-    column_paths = []
-    needs_explode = []  # To keep track of which paths need exploding
+def determine_explode_paths(column_paths):
+    needs_explode = []
+    for path in column_paths:
+        if 'Array' in path:  # Replace this with your actual condition to identify array columns.
+            needs_explode.append(path)
+    return needs_explode
 
-    for field in schema.fields:
-        current_path = f"{parent_path}.{field.name}" if parent_path else field.name
-        if isinstance(field.dataType, StructType):
-            nested_paths, nested_needs_explode = extract_column_paths(field.dataType, current_path)
-            column_paths.extend(nested_paths)
-            needs_explode.extend(nested_needs_explode)
-        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            # Mark this path for explosion and process the nested structure
-            column_paths.append(current_path)  # Include the path to the array for potential explosion
-            needs_explode.append(current_path)  # This path needs an explode operation
-            nested_paths, nested_needs_explode = extract_column_paths(field.dataType.elementType, current_path)
-            column_paths.extend(nested_paths)
-            needs_explode.extend(nested_needs_explode)
-        else:
-            column_paths.append(current_path)
-
-    return column_paths, needs_explode
-def apply_transformations(df, column_paths, needs_explode):
+def apply_transformations(df, column_paths):
+    needs_explode = determine_explode_paths(column_paths)
     for path in needs_explode:
-        exploded_column = path.split('.')[-1]  # Get the last part of the path for the new column name
+        exploded_column = path.split('.')[-1]  # Simplified assumption; adjust as necessary.
         df = df.withColumn(exploded_column, explode_outer(path))
     return df
-def generate_select_expressions(df, column_paths):
+
+def generate_select_expression_from_list(column_names):
+    seen_aliases = {}
     select_expr = []
-    for path in column_paths:
-        if path in needs_explode:
-            # If the path was exploded, adjust the reference
-            exploded_column = path.split('.')[-1]
-            part_name = exploded_column  # The alias should use the new exploded column name
+    for col_name in column_names:
+        parts = col_name.split('.')
+        simple_name = parts[-1]
+        snake_case_name = camel_to_snake(simple_name)
+        if snake_case_name in seen_aliases:
+            count = seen_aliases[snake_case_name] + 1
+            snake_case_name += f"_{count}"
+            seen_aliases[snake_case_name] = count
         else:
-            parts = path.split('.')
-            part_name = parts[-1]
+            seen_aliases[snake_case_name] = 1
+        select_expr.append(f"col('{col_name}').alias('{snake_case_name}')")
+    return select_expr
 
-        snake_case_name = camel_to_snake(part_name)
-        select_expr.append(col(path).alias(snake_case_name))
+def generate_pyspark_script(config, schema):
+    schema_file_path = config['pyspark_schema_path']
+    output_file_path = config['pyspark_script_output_path']
+    schema_module = Path(schema_file_path).stem
 
-    return df.select(*select_expr)
+    # Generate schema file
+    generate_schema_file(schema, schema_file_path)
+    column_paths = extract_column_paths(schema)
+
+    # Generate the actual PySpark script
+    pyspark_code = f"""
+from pyspark.sql import SparkSession
+from {schema_module} import get_schema
+from pyspark.sql.functions import col, explode_outer
+
+spark = SparkSession.builder.appName("JsonToDataFrame").getOrCreate()
+
+schema = get_schema()
+df = spark.read.schema(schema).json("{config['json_data_input_path']}")
+
+df_transformed = apply_transformations(df, column_paths)
+
+select_expressions = generate_select_expression_from_list(column_paths)
+select_statement = df_transformed.select(*select_expressions)
+
+select_statement.show(truncate=False)
+"""
+    with open(output_file_path, 'w') as file:
+        file.write(pyspark_code)
 
 def main():
     config_path = 'config.yaml'
@@ -48,12 +66,7 @@ def main():
     json_schema = read_json_file(config['json_schema_path'])
     definitions = json_schema.get('definitions', {})
     pyspark_schema = convert_to_spark_schema(json_schema, definitions)
-
-    column_paths, needs_explode = extract_column_paths(pyspark_schema)
-    df = spark.read.schema(pyspark_schema).json(config['json_data_input_path'])
-    df = apply_transformations(df, column_paths, needs_explode)
-    final_df = generate_select_expressions(df, column_paths)
-    final_df.show(truncate=False)
+    generate_pyspark_script(config, pyspark_schema)
 
 if __name__ == "__main__":
     main()
