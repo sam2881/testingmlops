@@ -1,6 +1,35 @@
-def determine_explode_paths(schema):
-    explode_paths = []
-    for field in schema.fields:
-        if isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            explode_paths.append(field.name)
-    return explode_paths
+def generate_select_expression_from_list(column_names):
+    """Generate a DataFrame select expression with properly aliased columns from a list of column names."""
+    seen_aliases = {}
+    select_expr = []
+
+    for col_name in column_names:
+        if isinstance(col_name, str):
+            parts = col_name.split('.')
+            simple_name = parts[-1]  # Get the last part of the name
+            snake_case_name = camel_to_snake(simple_name)  # Convert it to snake_case
+
+            # Check for duplicates and prepend parent name if necessary
+            if snake_case_name in seen_aliases:
+                parent_name = camel_to_snake(parts[-2]) if len(parts) > 1 else None
+                if parent_name:
+                    snake_case_name = parent_name + '_' + snake_case_name
+                else:
+                    count = seen_aliases.get(snake_case_name, 0) + 1
+                    snake_case_name += f"_{count}"
+                    seen_aliases[snake_case_name] = count
+            else:
+                seen_aliases[snake_case_name] = 1
+
+            select_expr.append(f"col('{col_name}').alias('{snake_case_name}')")
+            print(f"Adding select expression for column: {col_name} as {snake_case_name}")
+        else:
+            raise ValueError("column name is not a string.")
+
+    # Join all the select expressions to simulate a DataFrame select method
+    return ",\n".join(select_expr)
+
+# Example usage
+column_names = extract_column_paths(df.schema)
+select_expressions = generate_select_expression_from_list(column_names)
+print("Select Expressions:", select_expressions)
