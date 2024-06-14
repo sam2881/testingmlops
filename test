@@ -154,6 +154,7 @@ def generate_pyspark_script(config, schema):
     select_expressions = generate_select_expression_from_list(column_paths + exploded_columns)
 
     # Generate PySpark script
+    select_statements = ',\n    '.join([str(expr) for expr in select_expressions])
     pyspark_code = f"""
 import yaml
 from pyspark.sql import SparkSession
@@ -179,7 +180,7 @@ df = apply_transformations(df, {explode_paths})
 
 # Select and alias columns as required
 select_statement = df.select(
-    {', '.join([str(expr) for expr in select_expressions])}
+    {select_statements}
 )
 
 # Show the results
