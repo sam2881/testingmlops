@@ -1,16 +1,6 @@
-def generate_select_expressions(schema):
-    """Generate select expressions taking into account exploded fields."""
-    select_expr = []
-    exploded_paths = determine_explode_paths(schema)
-    column_paths = extract_column_paths(schema)
-
-    for path in column_paths:
-        if path in exploded_paths:
-            new_col_name = path.split('.')[-1] + "_exploded"
-            snake_case_name = camel_to_snake(new_col_name)
-            select_expr.append(f"col('{new_col_name}').alias('{snake_case_name}')")
-        else:
-            snake_case_name = camel_to_snake(path.split('.')[-1])
-            select_expr.append(f"col('{path}').alias('{snake_case_name}')")
-    
-    return ",\n    ".join(select_expr), exploded_paths
+def determine_explode_paths(schema):
+    explode_paths = []
+    for field in schema.fields:
+        if isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
+            explode_paths.append(field.name)
+    return explode_paths
