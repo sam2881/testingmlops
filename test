@@ -1,145 +1,53 @@
-import json
-import re
-import yaml
-from pathlib import Path
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, explode_outer
-from pyspark.sql.types import *
-
-def read_json_file(file_path):
-    """Read and return the JSON schema from a file."""
-    with open(file_path, 'r') as file:
-        return json.load(file)
-
-def resolve_reference(ref, definitions):
-    """Resolve $ref to actual defined schema, handling nested references."""
-    if isinstance(ref, dict) and '$ref' in ref:
-        ref_key = ref['$ref'].replace('#/definitions/', '')
-        return resolve_reference(definitions.get(ref_key, {}), definitions)
-    return ref
-
-def convert_to_spark_schema(json_schema, definitions):
-    """Convert JSON schema to PySpark schema, handling types and references."""
-    if isinstance(json_schema, dict):
-        if 'type' not in json_schema:
-            if '$ref' in json_schema:
-                return convert_to_spark_schema(resolve_reference(json_schema, definitions), definitions)
-            return None  # Exit if unable to resolve schema
-        data_type = json_schema['type']
-        if data_type == 'object':
-            fields = [StructField(field, convert_to_spark_schema(prop, definitions), True)
-                      for field, prop in json_schema.get('properties', {}).items() if convert_to_spark_schema(prop, definitions)]
-            return StructType(fields)
-        elif data_type == 'array':
-            element_schema = json_schema.get('items', {})
-            spark_element_schema = convert_to_spark_schema(resolve_reference(element_schema, definitions), definitions)
-            return ArrayType(spark_element_schema, True) if spark_element_schema else None
-        elif data_type == 'string':
-            return StringType()
-        elif data_type == 'integer':
-            return IntegerType()
-        elif data_type == 'boolean':
-            return BooleanType()
-        elif data_type == 'number':
-            return DoubleType()
-        else:
-            return StringType()
-    elif isinstance(json_schema, list):
-        return convert_to_spark_schema(json_schema[0], definitions) if json_schema else None
-    return None
-
-def generate_pyspark_schema(schema_dict):
-    """Generate a PySpark schema from a JSON schema dictionary."""
-    definitions = schema_dict.get('definitions', {})
-    main_schema = schema_dict if 'type' in schema_dict else schema_dict.get('properties', {})
-    return convert_to_spark_schema(main_schema, definitions)
-
-def camel_to_snake(name):
-    """Convert camelCase string to snake_case string."""
-    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
-    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
-
 def extract_column_paths(schema, parent_path=""):
-    """Extract column paths that are terminal in terms of data storage, skipping intermediate complex types unless necessary."""
+    """
+    Recursively extract column paths from a DataFrame schema, focusing only on paths that lead to actual data fields,
+    and skipping intermediate structural paths unless they contain data themselves.
+    """
     column_paths = []
     for field in schema.fields:
         current_path = f"{parent_path}.{field.name}" if parent_path else field.name
         if isinstance(field.dataType, StructType):
+            # Recurse if the field is a StructType
             nested_paths = extract_column_paths(field.dataType, current_path)
-            if any(isinstance(f.dataType, (ArrayType, StructType)) for f in field.dataType.fields):
-                if nested_paths:
-                    column_paths.extend(nested_paths)
-            else:
-                column_paths.append(current_path)
-        elif isinstance(field.dataType, ArrayType):
-            # If it's an array of complex structures, recurse, otherwise add the path
-            if isinstance(field.dataType.elementType, StructType):
-                nested_paths = extract_column_paths(field.dataType.elementType, current_path)
+            if nested_paths:  # Only add if there are leaf nodes deeper in the hierarchy
                 column_paths.extend(nested_paths)
-            else:
-                column_paths.append(current_path)
+        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
+            # Recurse into elements if it's an array of StructType
+            nested_paths = extract_column_paths(field.dataType.elementType, current_path)
+            column_paths.extend(nested_paths)
         else:
+            # Add the current path for simple types and arrays of simple types
             column_paths.append(current_path)
     return column_paths
 
-def flatten(df):
-    """Flatten structured data within a DataFrame."""
-    complex_fields = dict([(field.name, field.dataType)
-                           for field in df.schema.fields
-                           if isinstance(field.dataType, (ArrayType, StructType))])
-    while complex_fields:
-        col_name = next(iter(complex_fields))
-        if isinstance(complex_fields[col_name], StructType):
-            expanded = [col(f"{col_name}.{k.name}").alias(f"{col_name}_{k.name}") for k in complex_fields[col_name].fields]
-            df = df.select("*", *expanded).drop(col_name)
-        elif isinstance(complex_fields[col_name], ArrayType):
-            df = df.withColumn(col_name, explode_outer(col(col_name)))
-        complex_fields = dict([(field.name, field.dataType)
-                               for field in df.schema.fields
-                               if isinstance(field.dataType, (ArrayType, StructType))])
-    return df
-
-def generate_select_expression(df):
-    """Generate select expressions for DataFrame."""
+def generate_select_expression_from_list(column_names):
+    """
+    Generate a DataFrame select expression with properly aliased columns from a list of column names.
+    """
     seen_aliases = {}
     select_expr = []
-    for col_name in df.columns:
-        parts = col_name.split('.')
-        alias = camel_to_snake(parts[-1])
-        if alias in seen_aliases:
-            alias = f"{camel_to_snake(parts[-2])}_{alias}" if len(parts) > 1 else f"{alias}_1"
-            seen_aliases[alias] += 1
+
+    for col_name in column_names:
+        if isinstance(col_name, str):
+            parts = col_name.split('.')
+            simple_name = parts[-1]  # Get the last part of the name
+            snake_case_name = camel_to_snake(simple_name)  # Convert it to snake_case
+
+            # Check for duplicates and prepend parent name if necessary
+            if snake_case_name in seen_aliases:
+                parent_name = camel_to_snake(parts[-2]) if len(parts) > 1 else None
+                if parent_name:
+                    snake_case_name = f"{parent_name}_{snake_case_name}"
+                else:
+                    count = seen_aliases[snake_case_name] + 1
+                    snake_case_name = f"{snake_case_name}_{count}"
+                seen_aliases[snake_case_name] = count
+            else:
+                seen_aliases[snake_case_name] = 1  # Initialize count
+
+            select_expr.append(f"col('{col_name}').alias('{snake_case_name}')")
         else:
-            seen_aliases[alias] = 1
-        select_expr.append(col(col_name).alias(alias))
-    return df.select(*select_expr)
+            raise ValueError("column name is not a string.")
 
-def generate_pyspark_script(config, schema):
-    """Generate a PySpark script from a schema."""
-    schema_path = config['pyspark_schema_path']
-    output_path = config['pyspark_script_output_path']
-    schema_code = generate_schema_file(schema, schema_path)
-    with open(output_path, 'w') as file:
-        file.write(f"""
-from pyspark.sql import SparkSession
-from {Path(schema_path).stem} import get_schema
-schema = get_schema()
-
-spark = SparkSession.builder.appName('Data Processing').getOrCreate()
-df = spark.read.schema(schema).json('{config['json_data_input_path']}')
-df_flattened = flatten(df)
-df_selected = generate_select_expression(df_flattened)
-df_selected.show()
-""")
-    print(f"Generated PySpark script at {output_path}")
-
-def main():
-    config_path = 'config.yaml'
-    with open(config_path, 'r') as file:
-        config = yaml.safe_load(file)
-    json_schema = read_json_file(config['json_schema_path'])
-    schema = convert_to_spark_schema(json_schema, {})
-    generate_pyspark_script(config, schema)
-
-if __name__ == "__main__":
-    main()
+    # Join all the select expressions to simulate a DataFrame select method
+    return ",\n".join(select_expr)
