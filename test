@@ -149,9 +149,11 @@ def generate_pyspark_script(config, schema):
     column_paths = extract_column_paths(schema)
     explode_paths = determine_explode_paths(column_paths)
 
+    # Apply transformations
+    transformed_columns = [f"{path}_exploded" if path in explode_paths else path for path in column_paths]
+
     # Generate select expressions
-    exploded_columns = [f"{path.split('.')[-1]}_exploded" for path in explode_paths]
-    select_expressions = generate_select_expression_from_list(column_paths + exploded_columns)
+    select_expressions = generate_select_expression_from_list(transformed_columns)
 
     # Generate PySpark script
     select_statements = ',\n    '.join([str(expr) for expr in select_expressions])
