@@ -1,52 +1,59 @@
 def extract_column_paths(schema, parent_path=""):
-    """
-    Recursively extract column paths from a DataFrame schema, focusing only on paths that lead to actual data fields,
-    and skipping intermediate structural paths unless they contain data themselves.
-    """
     column_paths = []
+    needs_explode = []  # To keep track of which paths need exploding
+
     for field in schema.fields:
         current_path = f"{parent_path}.{field.name}" if parent_path else field.name
         if isinstance(field.dataType, StructType):
-            # Recurse if the field is a StructType
-            nested_paths = extract_column_paths(field.dataType, current_path)
-            if nested_paths:  # Only add if there are leaf nodes deeper in the hierarchy
-                column_paths.extend(nested_paths)
-        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
-            # Recurse into elements if it's an array of StructType
-            nested_paths = extract_column_paths(field.dataType.elementType, current_path)
+            nested_paths, nested_needs_explode = extract_column_paths(field.dataType, current_path)
             column_paths.extend(nested_paths)
+            needs_explode.extend(nested_needs_explode)
+        elif isinstance(field.dataType, ArrayType) and isinstance(field.dataType.elementType, StructType):
+            # Mark this path for explosion and process the nested structure
+            column_paths.append(current_path)  # Include the path to the array for potential explosion
+            needs_explode.append(current_path)  # This path needs an explode operation
+            nested_paths, nested_needs_explode = extract_column_paths(field.dataType.elementType, current_path)
+            column_paths.extend(nested_paths)
+            needs_explode.extend(nested_needs_explode)
         else:
-            # Add the current path for simple types and arrays of simple types
             column_paths.append(current_path)
-    return column_paths
 
-def generate_select_expression_from_list(column_names):
-    """
-    Generate a DataFrame select expression with properly aliased columns from a list of column names.
-    """
-    seen_aliases = {}
+    return column_paths, needs_explode
+def apply_transformations(df, column_paths, needs_explode):
+    for path in needs_explode:
+        exploded_column = path.split('.')[-1]  # Get the last part of the path for the new column name
+        df = df.withColumn(exploded_column, explode_outer(path))
+    return df
+def generate_select_expressions(df, column_paths):
     select_expr = []
-
-    for col_name in column_names:
-        if isinstance(col_name, str):
-            parts = col_name.split('.')
-            simple_name = parts[-1]  # Get the last part of the name
-            snake_case_name = camel_to_snake(simple_name)  # Convert it to snake_case
-
-            # Check for duplicates and prepend parent name if necessary
-            if snake_case_name in seen_aliases:
-                parent_name = camel_to_snake(parts[-2]) if len(parts) > 1 else None
-                if parent_name:
-                    snake_case_name = f"{parent_name}_{snake_case_name}"
-                count = seen_aliases.get(snake_case_name, 0) + 1
-                snake_case_name = f"{snake_case_name}_{count}"
-                seen_aliases[snake_case_name] = count
-            else:
-                seen_aliases[snake_case_name] = 1  # Initialize count as this is the first occurrence
-
-            select_expr.append(f"col('{col_name}').alias('{snake_case_name}')")
+    for path in column_paths:
+        if path in needs_explode:
+            # If the path was exploded, adjust the reference
+            exploded_column = path.split('.')[-1]
+            part_name = exploded_column  # The alias should use the new exploded column name
         else:
-            raise ValueError("column name is not a string.")
+            parts = path.split('.')
+            part_name = parts[-1]
 
-    # Join all the select expressions to simulate a DataFrame select method
-    return ",\n".join(select_expr)
+        snake_case_name = camel_to_snake(part_name)
+        select_expr.append(col(path).alias(snake_case_name))
+
+    return df.select(*select_expr)
+
+def main():
+    config_path = 'config.yaml'
+    with open(config_path, 'r') as file:
+        config = yaml.safe_load(file)
+
+    json_schema = read_json_file(config['json_schema_path'])
+    definitions = json_schema.get('definitions', {})
+    pyspark_schema = convert_to_spark_schema(json_schema, definitions)
+
+    column_paths, needs_explode = extract_column_paths(pyspark_schema)
+    df = spark.read.schema(pyspark_schema).json(config['json_data_input_path'])
+    df = apply_transformations(df, column_paths, needs_explode)
+    final_df = generate_select_expressions(df, column_paths)
+    final_df.show(truncate=False)
+
+if __name__ == "__main__":
+    main()
